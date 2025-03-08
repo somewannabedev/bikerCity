@@ -33,14 +33,17 @@
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x404040));
 
+<<<<<<< HEAD
         camera.position.set(20, 5, 100);
+=======
+        camera.position.set(0, 5, 0);
+>>>>>>> b80fd2be3571a0da840487b5a4db294b080edbe5
         camera.rotation.y = Math.PI;
 
         const BASE_CHUNK_SIZE = 64;
         const VIEW_DISTANCE = 3;
         const chunks = {};
         const noise = new SimplexNoise();
-        const collisions = [];
 
         // Motorcycle variables
         let motorcycle = null;
@@ -87,72 +90,40 @@
 
             for (let i = 0; i < gridSize; i++) {
                 for (let j = 0; j < gridSize; j++) {
-                    const blockX = i * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetX;
-                    const blockZ = j * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetZ;
+                    const x = i * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetX;
+                    const z = j * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetZ;
 
                     const blockGeo = new THREE.PlaneGeometry(blockSize, blockSize);
                     const blockMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
                     const block = new THREE.Mesh(blockGeo, blockMat);
                     block.rotation.x = -Math.PI / 2;
-                    block.position.set(blockX, 0.1, blockZ);
+                    block.position.set(x, 0.1, z);
                     chunkGroup.add(block);
 
-                    let currentX = blockX - blockSize / 2;
-                    const blockEndX = blockX + blockSize / 2;
-                    const blockEndZ = blockZ + blockSize / 2;
-                    let lastWidth = 0;
+                    const buildingType = noise.noise2D(chunkX + i * 0.1, chunkZ + j * 0.1);
+                    let height, width, depth, color;
+                    const sizeNoise = noise.noise2D(chunkX + i * 0.2 + 300, chunkZ + j * 0.2 + 300);
+                    if (sizeNoise < -0.5) { width = blockSize / 4; depth = blockSize / 4; }
+                    else if (sizeNoise < 0) { width = blockSize / 2; depth = blockSize / 2; }
+                    else if (sizeNoise < 0.5) { width = blockSize / 2; depth = blockSize; }
+                    else { width = blockSize * 0.75; depth = blockSize * 0.75; }
 
-                    while (currentX < blockEndX) {
-                        let currentZ = blockZ - blockSize / 2;
-                        while (currentZ < blockEndZ) {
-                            const buildingType = noise.noise2D(chunkX + currentX * 0.1, chunkZ + currentZ * 0.1);
-                            let height, width, depth, color;
-                            const sizeNoise = noise.noise2D(chunkX + currentX * 0.2 + 300, chunkZ + currentZ * 0.2 + 300);
-                            if (sizeNoise < -0.5) { width = blockSize / 4; depth = blockSize / 4; }
-                            else if (sizeNoise < 0) { width = blockSize / 2; depth = blockSize / 2; }
-                            else if (sizeNoise < 0.5) { width = blockSize / 2; depth = blockSize; }
-                            else { width = blockSize * 0.75; depth = blockSize * 0.75; }
-
-                            if (buildingType < -0.3) {
-                                height = 5 + Math.random() * 5;
-                                color = 0x888888;
-                            } else if (buildingType < 0.3) {
-                                height = 10 + Math.random() * 10;
-                                color = 0x666666;
-                            } else {
-                                height = 20 + Math.random() * 30;
-                                color = 0x999999;
-                            }
-
-                            const gapChance = noise.noise2D(chunkX + currentX * 0.3 + 500, chunkZ + currentZ * 0.3 + 500);
-                            if (gapChance > 0.9) {
-                                width *= 0.9;
-                                depth *= 0.9;
-                            }
-
-                            const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-                            const buildingMat = new THREE.MeshLambertMaterial({ color });
-                            const building = new THREE.Mesh(buildingGeo, buildingMat);
-                            const worldX = chunkX * BASE_CHUNK_SIZE + currentX + width / 2;
-                            const worldZ = chunkZ * BASE_CHUNK_SIZE + currentZ + depth / 2;
-                            building.position.set(currentX + width / 2, height / 2, currentZ + depth / 2);
-                            chunkGroup.add(building);
-
-                            collisions.push({
-                                minX: worldX - width / 2,
-                                maxX: worldX + width / 2,
-                                minZ: worldZ - depth / 2,
-                                maxZ: worldZ + depth / 2,
-                                height: height
-                            });
-
-                            currentZ += depth;
-                            if (currentZ + depth > blockEndZ) break;
-                            lastWidth = width;
-                        }
-                        currentX += lastWidth || blockSize / 4;
-                        if (currentX + (lastWidth || blockSize / 4) > blockEndX) break;
+                    if (buildingType < -0.3) {
+                        height = 5 + Math.random() * 5;
+                        color = 0x888888;
+                    } else if (buildingType < 0.3) {
+                        height = 10 + Math.random() * 10;
+                        color = 0x666666;
+                    } else {
+                        height = 20 + Math.random() * 30;
+                        color = 0x999999;
                     }
+
+                    const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+                    const buildingMat = new THREE.MeshLambertMaterial({ color });
+                    const building = new THREE.Mesh(buildingGeo, buildingMat);
+                    building.position.set(x, height / 2, z);
+                    chunkGroup.add(building);
                 }
             }
 
@@ -178,19 +149,12 @@
                 const [x, z] = key.split(',').map(Number);
                 if (Math.abs(x - camChunkX) > VIEW_DISTANCE + 1 || Math.abs(z - camChunkZ) > VIEW_DISTANCE + 1) {
                     scene.remove(chunks[key]);
-                    const chunkPosX = x * BASE_CHUNK_SIZE;
-                    const chunkPosZ = z * BASE_CHUNK_SIZE;
-                    for (let i = collisions.length - 1; i >= 0; i--) {
-                        const col = collisions[i];
-                        if (Math.abs(col.minX - chunkPosX) < BASE_CHUNK_SIZE && Math.abs(col.minZ - chunkPosZ) < BASE_CHUNK_SIZE) {
-                            collisions.splice(i, 1);
-                        }
-                    }
                     delete chunks[key];
                 }
             }
         }
 
+<<<<<<< HEAD
         let baseSpeed = 0.5;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
@@ -251,8 +215,25 @@
             if (!checkCollision(newX, newZ)) {
                 camera.position.x = newX;
                 camera.position.z = newZ;
-            }
+=======
+        const moveSpeed = 0.5;
+        const turnSpeed = 0.02;
+        const keys = { w: false, a: false, s: false, d: false };
+        document.addEventListener('keydown', (e) => { if (e.key in keys) keys[e.key] = true; });
+        document.addEventListener('keyup', (e) => { if (e.key in keys) keys[e.key] = false; });
 
+        function updateCamera() {
+            if (keys.w) {
+                camera.position.x -= Math.sin(camera.rotation.y) * moveSpeed;
+                camera.position.z -= Math.cos(camera.rotation.y) * moveSpeed;
+            }
+            if (keys.s) {
+                camera.position.x += Math.sin(camera.rotation.y) * moveSpeed;
+                camera.position.z += Math.cos(camera.rotation.y) * moveSpeed;
+>>>>>>> b80fd2be3571a0da840487b5a4db294b080edbe5
+            }
+            if (keys.a) camera.rotation.y += turnSpeed;
+            if (keys.d) camera.rotation.y -= turnSpeed;
             camera.position.y = 5;
         }
 
