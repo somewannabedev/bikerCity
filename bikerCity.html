@@ -35,6 +35,8 @@
         <label>Road Width: <input type="range" id="roadWidth" min="2" max="8" value="4"></label>
         <label>Building Density: <input type="range" id="buildingDensity" min="0.5" max="1" step="0.05" value="1"></label>
         <label>View Distance: <input type="range" id="viewDistance" min="1" max="5" value="3"></label>
+        <label><input type="checkbox" id="noCollisions"> Remove Collisions</label>
+        <label><input type="checkbox" id="topDownView"> Top Down View</label>
         <button id="regenerate">Regenerate World</button>
     </div>
     <audio id="backgroundMusic" loop>
@@ -62,6 +64,7 @@
         // Motorcycle variables
         let motorcycle = null;
         const maxLeanAngle = Math.PI / 6;
+        let motorcycleWidth = 1, motorcycleDepth = 1;
 
         // Load Motorcycle GLB Model
         const loader = new THREE.GLTFLoader();
@@ -73,7 +76,11 @@
                 motorcycle.position.set(0, -7, -2);
                 camera.add(motorcycle);
                 scene.add(camera);
-                console.log('Motorcycle loaded');
+
+                const box = new THREE.Box3().setFromObject(motorcycle);
+                motorcycleWidth = (box.max.x - box.min.x) * 0.08;
+                motorcycleDepth = (box.max.z - box.min.z) * 0.08;
+                console.log('Motorcycle loaded, size:', motorcycleWidth, motorcycleDepth);
             },
             undefined,
             function (error) {
@@ -129,7 +136,7 @@
                         while (currentZ < blockEndZ) {
                             if (Math.random() > BUILDING_DENSITY) {
                                 currentZ += BLOCK_SIZE / 4;
-                                continue; // Skip some buildings based on density
+                                continue;
                             }
 
                             const buildingType = noise.noise2D(chunkX + currentX * 0.1, chunkZ + currentZ * 0.1);
@@ -219,12 +226,12 @@
         }
 
         function checkCollision(x, z) {
+            if (document.getElementById('noCollisions').checked) return false; // Skip if disabled
             const cameraHeight = 5;
-            const cameraRadius = 1;
             for (const col of collisions) {
                 if (
-                    x + cameraRadius > col.minX && x - cameraRadius < col.maxX &&
-                    z + cameraRadius > col.minZ && z - cameraRadius < col.maxZ &&
+                    x + motorcycleWidth / 2 > col.minX && x - motorcycleWidth / 2 < col.maxX &&
+                    z + motorcycleDepth / 2 > col.minZ && z - motorcycleDepth / 2 < col.maxZ &&
                     cameraHeight < col.height
                 ) {
                     return true;
@@ -234,7 +241,8 @@
         }
 
         function findSafeSpawn() {
-            let x = 20, z = 100;
+            let x = Math.random() * 1000 - 500; // Random start between -500 and 500
+            let z = Math.random() * 1000 - 500;
             const y = 5;
             const clearDistance = 10;
             let attempts = 0;
@@ -259,7 +267,7 @@
             }
 
             console.warn('No safe spawn found after', maxAttempts, 'attempts');
-            camera.position.set(20, 5, 100);
+            camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500); // Random fallback
             return false;
         }
 
@@ -269,6 +277,7 @@
         const turnSpeed = 0.02;
         const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false };
         let startTime = performance.now();
+        let lastSpeedIncrease = startTime;
         let leanAngle = 0;
 
         document.addEventListener('keydown', (e) => {
@@ -281,7 +290,7 @@
         function updateCamera() {
             if (keys['w'] || keys['W']) currentSpeed = Math.min(currentSpeed + 0.1, baseSpeed * 2);
             if (keys['s'] || keys['S']) {
-                currentSpeed = Math.max(currentSpeed - 0.1, minSpeed);
+                currentSpeed = Math.max(currentSpeed - 0.001, minSpeed);
             } else if (!(keys['w'] || keys['W'])) {
                 currentSpeed += (baseSpeed - currentSpeed) * 0.05;
             }
@@ -293,9 +302,9 @@
 
             const leanTarget = turnAmount * 200;
             if (turnAmount === 0) {
-                leanAngle += (0 - leanAngle) * 0.3;
+                leanAngle += (0 - leanAngle) * 0.15; // Your updated value
             } else {
-                leanAngle += (leanTarget - leanAngle) * 0.003;
+                leanAngle += (leanTarget - leanAngle) * 0.003; // Your updated value
             }
             leanAngle = Math.max(-maxLeanAngle, Math.min(maxLeanAngle, leanAngle));
             camera.rotation.z = leanAngle;
@@ -304,15 +313,34 @@
                 motorcycle.rotation.z = leanAngle;
             }
 
-            const newX = camera.position.x - Math.sin(camera.rotation.y) * currentSpeed;
-            const newZ = camera.position.z - Math.cos(camera.rotation.y) * currentSpeed;
+            const leanFactor = 1 - Math.abs(leanAngle) / maxLeanAngle * 0.5;
+            const adjustedSpeed = currentSpeed * leanFactor;
+
+            const newX = camera.position.x - Math.sin(camera.rotation.y) * adjustedSpeed;
+            const newZ = camera.position.z - Math.cos(camera.rotation.y) * adjustedSpeed;
 
             if (!checkCollision(newX, newZ)) {
                 camera.position.x = newX;
                 camera.position.z = newZ;
             }
 
-            camera.position.y = 5;
+            // Top-down view
+            if (document.getElementById('topDownView').checked) {
+                camera.position.y = 100; // High above
+                camera.rotation.x = -Math.PI / 2; // Look down
+                camera.rotation.z = 0; // No lean in top-down
+                if (motorcycle) motorcycle.rotation.z = 0;
+            } else {
+                camera.position.y = 5;
+                camera.rotation.x = 0; // Reset to normal view
+            }
+
+            const currentTime = performance.now();
+            if (currentTime - lastSpeedIncrease >= 10000) {
+                baseSpeed *= 1.2;
+                lastSpeedIncrease = currentTime;
+                console.log('Base speed increased to:', baseSpeed);
+            }
         }
 
         function updateDisplay() {
@@ -344,9 +372,10 @@
                 scene.remove(chunks[key]);
                 delete chunks[key];
             }
-            collisions.length = 0; // Clear collisions
-            findSafeSpawn(); // Respawn safely
-            console.log('World regenerated with new parameters');
+            collisions.length = 0;
+			baseSpeed = 0.5;
+            findSafeSpawn();
+            console.log('World regenerated at new location');
         });
 
         // Background music
