@@ -14,10 +14,32 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 5px;
         }
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+        }
+        #controls label { display: block; margin: 5px 0; }
+        #controls button { margin-top: 10px; }
     </style>
 </head>
 <body>
     <div id="info">Speed: 0.00 | Time: 0.00s</div>
+    <div id="controls">
+        <label>Base Chunk Size: <input type="range" id="baseChunkSize" min="32" max="128" value="64"></label>
+        <label>Block Size: <input type="range" id="blockSize" min="6" max="24" value="12"></label>
+        <label>Road Width: <input type="range" id="roadWidth" min="2" max="8" value="4"></label>
+        <label>Building Density: <input type="range" id="buildingDensity" min="0.5" max="1" step="0.05" value="1"></label>
+        <label>View Distance: <input type="range" id="viewDistance" min="1" max="5" value="3"></label>
+        <button id="regenerate">Regenerate World</button>
+    </div>
+    <audio id="backgroundMusic" loop>
+        <source src="music/background_music.mp3" type="audio/mpeg">
+    </audio>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/loaders/GLTFLoader.js"></script>
@@ -33,32 +55,24 @@
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x404040));
 
-<<<<<<< HEAD
-        camera.position.set(20, 5, 100);
-=======
-        camera.position.set(0, 5, 0);
->>>>>>> b80fd2be3571a0da840487b5a4db294b080edbe5
-        camera.rotation.y = Math.PI;
-
-        const BASE_CHUNK_SIZE = 64;
-        const VIEW_DISTANCE = 3;
         const chunks = {};
         const noise = new SimplexNoise();
+        const collisions = [];
 
         // Motorcycle variables
         let motorcycle = null;
-        const maxLeanAngle = Math.PI / 6; // 30 degrees max lean
+        const maxLeanAngle = Math.PI / 6;
 
         // Load Motorcycle GLB Model
         const loader = new THREE.GLTFLoader();
         loader.load(
-            'models/motorcycle.glb', // Adjust path to your GLB file
+            'models/motorcycle.glb',
             function (gltf) {
                 motorcycle = gltf.scene;
-                motorcycle.scale.set(0.08, 0.08, 0.08); // Adjust scale as needed
-                motorcycle.position.set(0, -7, -2); // In front of camera, above ground
-                camera.add(motorcycle); // Attach to camera so it moves with it
-                scene.add(camera); // Ensure camera is in scene
+                motorcycle.scale.set(0.08, 0.08, 0.08);
+                motorcycle.position.set(0, -7, -2);
+                camera.add(motorcycle);
+                scene.add(camera);
                 console.log('Motorcycle loaded');
             },
             undefined,
@@ -67,6 +81,13 @@
             }
         );
 
+        // World generation parameters
+        let BASE_CHUNK_SIZE = 64;
+        let BLOCK_SIZE = 12;
+        let ROAD_WIDTH = 4;
+        let BUILDING_DENSITY = 1;
+        let VIEW_DISTANCE = 3;
+
         function getChunkKey(x, z) {
             return `${Math.floor(x / BASE_CHUNK_SIZE)},${Math.floor(z / BASE_CHUNK_SIZE)}`;
         }
@@ -74,12 +95,10 @@
         function generateChunk(chunkX, chunkZ) {
             const chunkGroup = new THREE.Group();
             const chunkSize = BASE_CHUNK_SIZE + noise.noise2D(chunkX * 0.05, chunkZ * 0.05) * 32;
-            const blockSize = 12;
-            const roadWidth = 4;
-            const gridSize = Math.floor((chunkSize - roadWidth) / (blockSize + roadWidth));
+            const gridSize = Math.floor((chunkSize - ROAD_WIDTH) / (BLOCK_SIZE + ROAD_WIDTH));
 
-            const offsetX = noise.noise2D(chunkX * 0.1, chunkZ * 0.1) * blockSize * 2;
-            const offsetZ = noise.noise2D(chunkX * 0.1 + 100, chunkZ * 0.1 + 100) * blockSize * 2;
+            const offsetX = noise.noise2D(chunkX * 0.1, chunkZ * 0.1) * BLOCK_SIZE * 2;
+            const offsetZ = noise.noise2D(chunkX * 0.1 + 100, chunkZ * 0.1 + 100) * BLOCK_SIZE * 2;
             const rotation = noise.noise2D(chunkX * 0.1 + 200, chunkZ * 0.1 + 200) * 0.3;
 
             const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
@@ -90,40 +109,77 @@
 
             for (let i = 0; i < gridSize; i++) {
                 for (let j = 0; j < gridSize; j++) {
-                    const x = i * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetX;
-                    const z = j * (blockSize + roadWidth) - (chunkSize / 2) + roadWidth / 2 + offsetZ;
+                    const blockX = i * (BLOCK_SIZE + ROAD_WIDTH) - (chunkSize / 2) + ROAD_WIDTH / 2 + offsetX;
+                    const blockZ = j * (BLOCK_SIZE + ROAD_WIDTH) - (chunkSize / 2) + ROAD_WIDTH / 2 + offsetZ;
 
-                    const blockGeo = new THREE.PlaneGeometry(blockSize, blockSize);
+                    const blockGeo = new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE);
                     const blockMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
                     const block = new THREE.Mesh(blockGeo, blockMat);
                     block.rotation.x = -Math.PI / 2;
-                    block.position.set(x, 0.1, z);
+                    block.position.set(blockX, 0.1, blockZ);
                     chunkGroup.add(block);
 
-                    const buildingType = noise.noise2D(chunkX + i * 0.1, chunkZ + j * 0.1);
-                    let height, width, depth, color;
-                    const sizeNoise = noise.noise2D(chunkX + i * 0.2 + 300, chunkZ + j * 0.2 + 300);
-                    if (sizeNoise < -0.5) { width = blockSize / 4; depth = blockSize / 4; }
-                    else if (sizeNoise < 0) { width = blockSize / 2; depth = blockSize / 2; }
-                    else if (sizeNoise < 0.5) { width = blockSize / 2; depth = blockSize; }
-                    else { width = blockSize * 0.75; depth = blockSize * 0.75; }
+                    let currentX = blockX - BLOCK_SIZE / 2;
+                    const blockEndX = blockX + BLOCK_SIZE / 2;
+                    const blockEndZ = blockZ + BLOCK_SIZE / 2;
+                    let lastWidth = 0;
 
-                    if (buildingType < -0.3) {
-                        height = 5 + Math.random() * 5;
-                        color = 0x888888;
-                    } else if (buildingType < 0.3) {
-                        height = 10 + Math.random() * 10;
-                        color = 0x666666;
-                    } else {
-                        height = 20 + Math.random() * 30;
-                        color = 0x999999;
+                    while (currentX < blockEndX) {
+                        let currentZ = blockZ - BLOCK_SIZE / 2;
+                        while (currentZ < blockEndZ) {
+                            if (Math.random() > BUILDING_DENSITY) {
+                                currentZ += BLOCK_SIZE / 4;
+                                continue; // Skip some buildings based on density
+                            }
+
+                            const buildingType = noise.noise2D(chunkX + currentX * 0.1, chunkZ + currentZ * 0.1);
+                            let height, width, depth, color;
+                            const sizeNoise = noise.noise2D(chunkX + currentX * 0.2 + 300, chunkZ + currentZ * 0.2 + 300);
+                            if (sizeNoise < -0.5) { width = BLOCK_SIZE / 4; depth = BLOCK_SIZE / 4; }
+                            else if (sizeNoise < 0) { width = BLOCK_SIZE / 2; depth = BLOCK_SIZE / 2; }
+                            else if (sizeNoise < 0.5) { width = BLOCK_SIZE / 2; depth = BLOCK_SIZE; }
+                            else { width = BLOCK_SIZE * 0.75; depth = BLOCK_SIZE * 0.75; }
+
+                            if (buildingType < -0.3) {
+                                height = 5 + Math.random() * 5;
+                                color = 0x888888;
+                            } else if (buildingType < 0.3) {
+                                height = 10 + Math.random() * 10;
+                                color = 0x666666;
+                            } else {
+                                height = 20 + Math.random() * 30;
+                                color = 0x999999;
+                            }
+
+                            const gapChance = noise.noise2D(chunkX + currentX * 0.3 + 500, chunkZ + currentZ * 0.3 + 500);
+                            if (gapChance > 0.9) {
+                                width *= 0.9;
+                                depth *= 0.9;
+                            }
+
+                            const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+                            const buildingMat = new THREE.MeshLambertMaterial({ color });
+                            const building = new THREE.Mesh(buildingGeo, buildingMat);
+                            const worldX = chunkX * BASE_CHUNK_SIZE + currentX + width / 2;
+                            const worldZ = chunkZ * BASE_CHUNK_SIZE + currentZ + depth / 2;
+                            building.position.set(currentX + width / 2, height / 2, currentZ + depth / 2);
+                            chunkGroup.add(building);
+
+                            collisions.push({
+                                minX: worldX - width / 2,
+                                maxX: worldX + width / 2,
+                                minZ: worldZ - depth / 2,
+                                maxZ: worldZ + depth / 2,
+                                height: height
+                            });
+
+                            currentZ += depth;
+                            if (currentZ + depth > blockEndZ) break;
+                            lastWidth = width;
+                        }
+                        currentX += lastWidth || BLOCK_SIZE / 4;
+                        if (currentX + (lastWidth || BLOCK_SIZE / 4) > blockEndX) break;
                     }
-
-                    const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-                    const buildingMat = new THREE.MeshLambertMaterial({ color });
-                    const building = new THREE.Mesh(buildingGeo, buildingMat);
-                    building.position.set(x, height / 2, z);
-                    chunkGroup.add(building);
                 }
             }
 
@@ -149,12 +205,64 @@
                 const [x, z] = key.split(',').map(Number);
                 if (Math.abs(x - camChunkX) > VIEW_DISTANCE + 1 || Math.abs(z - camChunkZ) > VIEW_DISTANCE + 1) {
                     scene.remove(chunks[key]);
+                    const chunkPosX = x * BASE_CHUNK_SIZE;
+                    const chunkPosZ = z * BASE_CHUNK_SIZE;
+                    for (let i = collisions.length - 1; i >= 0; i--) {
+                        const col = collisions[i];
+                        if (Math.abs(col.minX - chunkPosX) < BASE_CHUNK_SIZE && Math.abs(col.minZ - chunkPosZ) < BASE_CHUNK_SIZE) {
+                            collisions.splice(i, 1);
+                        }
+                    }
                     delete chunks[key];
                 }
             }
         }
 
-<<<<<<< HEAD
+        function checkCollision(x, z) {
+            const cameraHeight = 5;
+            const cameraRadius = 1;
+            for (const col of collisions) {
+                if (
+                    x + cameraRadius > col.minX && x - cameraRadius < col.maxX &&
+                    z + cameraRadius > col.minZ && z - cameraRadius < col.maxZ &&
+                    cameraHeight < col.height
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function findSafeSpawn() {
+            let x = 20, z = 100;
+            const y = 5;
+            const clearDistance = 10;
+            let attempts = 0;
+            const maxAttempts = 100;
+
+            while (attempts < maxAttempts) {
+                updateChunks();
+                const directionZ = -Math.cos(camera.rotation.y);
+                const directionX = -Math.sin(camera.rotation.y);
+                const aheadX = x + directionX * clearDistance;
+                const aheadZ = z + directionZ * clearDistance;
+
+                if (!checkCollision(x, z) && !checkCollision(aheadX, aheadZ)) {
+                    camera.position.set(x, y, z);
+                    console.log('Safe spawn found at:', x, z);
+                    return true;
+                }
+
+                x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
+                z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
+                attempts++;
+            }
+
+            console.warn('No safe spawn found after', maxAttempts, 'attempts');
+            camera.position.set(20, 5, 100);
+            return false;
+        }
+
         let baseSpeed = 0.5;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
@@ -170,21 +278,6 @@
             if (e.key in keys) keys[e.key] = false;
         });
 
-        function checkCollision(newX, newZ) {
-            const cameraHeight = 5;
-            const cameraRadius = 1;
-            for (const col of collisions) {
-                if (
-                    newX + cameraRadius > col.minX && newX - cameraRadius < col.maxX &&
-                    newZ + cameraRadius > col.minZ && newZ - cameraRadius < col.maxZ &&
-                    cameraHeight < col.height
-                ) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
         function updateCamera() {
             if (keys['w'] || keys['W']) currentSpeed = Math.min(currentSpeed + 0.1, baseSpeed * 2);
             if (keys['s'] || keys['S']) {
@@ -198,13 +291,15 @@
             if (keys['d']) turnAmount -= turnSpeed;
             camera.rotation.y += turnAmount;
 
-            // Calculate lean based on turn
-            const leanTarget = +turnAmount * 200; // Proportional to turn speed
-            leanAngle += (leanTarget - leanAngle) * 0.003; // Smooth transition
+            const leanTarget = turnAmount * 200;
+            if (turnAmount === 0) {
+                leanAngle += (0 - leanAngle) * 0.3;
+            } else {
+                leanAngle += (leanTarget - leanAngle) * 0.003;
+            }
             leanAngle = Math.max(-maxLeanAngle, Math.min(maxLeanAngle, leanAngle));
             camera.rotation.z = leanAngle;
 
-            // Apply lean to motorcycle if loaded
             if (motorcycle) {
                 motorcycle.rotation.z = leanAngle;
             }
@@ -215,25 +310,8 @@
             if (!checkCollision(newX, newZ)) {
                 camera.position.x = newX;
                 camera.position.z = newZ;
-=======
-        const moveSpeed = 0.5;
-        const turnSpeed = 0.02;
-        const keys = { w: false, a: false, s: false, d: false };
-        document.addEventListener('keydown', (e) => { if (e.key in keys) keys[e.key] = true; });
-        document.addEventListener('keyup', (e) => { if (e.key in keys) keys[e.key] = false; });
+            }
 
-        function updateCamera() {
-            if (keys.w) {
-                camera.position.x -= Math.sin(camera.rotation.y) * moveSpeed;
-                camera.position.z -= Math.cos(camera.rotation.y) * moveSpeed;
-            }
-            if (keys.s) {
-                camera.position.x += Math.sin(camera.rotation.y) * moveSpeed;
-                camera.position.z += Math.cos(camera.rotation.y) * moveSpeed;
->>>>>>> b80fd2be3571a0da840487b5a4db294b080edbe5
-            }
-            if (keys.a) camera.rotation.y += turnSpeed;
-            if (keys.d) camera.rotation.y -= turnSpeed;
             camera.position.y = 5;
         }
 
@@ -242,6 +320,41 @@
             document.getElementById('info').innerText = 
                 `Speed: ${currentSpeed.toFixed(2)} | Time: ${elapsedTime.toFixed(2)}s`;
         }
+
+        // Slider controls
+        document.getElementById('baseChunkSize').addEventListener('input', (e) => {
+            BASE_CHUNK_SIZE = parseInt(e.target.value);
+        });
+        document.getElementById('blockSize').addEventListener('input', (e) => {
+            BLOCK_SIZE = parseInt(e.target.value);
+        });
+        document.getElementById('roadWidth').addEventListener('input', (e) => {
+            ROAD_WIDTH = parseInt(e.target.value);
+        });
+        document.getElementById('buildingDensity').addEventListener('input', (e) => {
+            BUILDING_DENSITY = parseFloat(e.target.value);
+        });
+        document.getElementById('viewDistance').addEventListener('input', (e) => {
+            VIEW_DISTANCE = parseInt(e.target.value);
+        });
+
+        // Regenerate world
+        document.getElementById('regenerate').addEventListener('click', () => {
+            for (const key in chunks) {
+                scene.remove(chunks[key]);
+                delete chunks[key];
+            }
+            collisions.length = 0; // Clear collisions
+            findSafeSpawn(); // Respawn safely
+            console.log('World regenerated with new parameters');
+        });
+
+        // Background music
+        const audio = document.getElementById('backgroundMusic');
+        audio.play().catch(e => console.log('Audio play failed:', e));
+
+        // Initial setup
+        findSafeSpawn();
 
         function animate() {
             requestAnimationFrame(animate);
