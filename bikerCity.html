@@ -90,7 +90,7 @@
 
         // World generation parameters
         let BASE_CHUNK_SIZE = 64;
-        let BLOCK_SIZE = 12;
+        let BLOCK_SIZE = 24;
         let ROAD_WIDTH = 4;
         let BUILDING_DENSITY = 1;
         let VIEW_DISTANCE = 3;
@@ -100,100 +100,71 @@
         }
 
         function generateChunk(chunkX, chunkZ) {
-            const chunkGroup = new THREE.Group();
-            const chunkSize = BASE_CHUNK_SIZE + noise.noise2D(chunkX * 0.05, chunkZ * 0.05) * 32;
-            const gridSize = Math.floor((chunkSize - ROAD_WIDTH) / (BLOCK_SIZE + ROAD_WIDTH));
+			const chunkGroup = new THREE.Group();
+			const chunkSize = BASE_CHUNK_SIZE;
 
-            const offsetX = noise.noise2D(chunkX * 0.1, chunkZ * 0.1) * BLOCK_SIZE * 2;
-            const offsetZ = noise.noise2D(chunkX * 0.1 + 100, chunkZ * 0.1 + 100) * BLOCK_SIZE * 2;
-            const rotation = noise.noise2D(chunkX * 0.1 + 200, chunkZ * 0.1 + 200) * 0.3;
+			// Ground plane
+			const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
+			const groundMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+			const ground = new THREE.Mesh(groundGeo, groundMat);
+			ground.rotation.x = -Math.PI / 2;
+			chunkGroup.add(ground);
 
-            const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
-            const groundMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-            const ground = new THREE.Mesh(groundGeo, groundMat);
-            ground.rotation.x = -Math.PI / 2;
-            chunkGroup.add(ground);
+			// Calculate approximate grid size for initial placement
+			const gridSize = Math.floor(chunkSize / (BLOCK_SIZE + ROAD_WIDTH)) + 1;
 
-            for (let i = 0; i < gridSize; i++) {
-                for (let j = 0; j < gridSize; j++) {
-                    const blockX = i * (BLOCK_SIZE + ROAD_WIDTH) - (chunkSize / 2) + ROAD_WIDTH / 2 + offsetX;
-                    const blockZ = j * (BLOCK_SIZE + ROAD_WIDTH) - (chunkSize / 2) + ROAD_WIDTH / 2 + offsetZ;
+			// Generate blocks with significant variation
+			for (let i = 0; i < gridSize; i++) {
+				const globalI = chunkZ * gridSize + i;
+				for (let j = 0; j < gridSize; j++) {
+					const globalJ = chunkX * gridSize + j;
 
-                    const blockGeo = new THREE.PlaneGeometry(BLOCK_SIZE, BLOCK_SIZE);
-                    const blockMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-                    const block = new THREE.Mesh(blockGeo, blockMat);
-                    block.rotation.x = -Math.PI / 2;
-                    block.position.set(blockX, 0.1, blockZ);
-                    chunkGroup.add(block);
+					// Vary block size significantly (0.5 to 2.0 * BLOCK_SIZE)
+					const sizeNoise = (noise.noise2D(globalI * 0.1, globalJ * 0.1) + 1) / 2;
+					const width = BLOCK_SIZE * (0.5 + sizeNoise * 1.5); // 0.5 to 2.0 * BLOCK_SIZE
+					const depth = BLOCK_SIZE * (0.5 + (noise.noise2D(globalI * 0.1 + 100, globalJ * 0.1 + 100) + 1) / 2 * 1.5);
+					const height = 5 + sizeNoise * 25; // 5 to 30 units for visual interest
 
-                    let currentX = blockX - BLOCK_SIZE / 2;
-                    const blockEndX = blockX + BLOCK_SIZE / 2;
-                    const blockEndZ = blockZ + BLOCK_SIZE / 2;
-                    let lastWidth = 0;
+					// Aggressive positional offset to disrupt the grid
+					const offsetX = noise.noise2D(globalI * 0.05, globalJ * 0.05 + 200) * BLOCK_SIZE;
+					const offsetZ = noise.noise2D(globalI * 0.05 + 300, globalJ * 0.05 + 400) * BLOCK_SIZE;
 
-                    while (currentX < blockEndX) {
-                        let currentZ = blockZ - BLOCK_SIZE / 2;
-                        while (currentZ < blockEndZ) {
-                            if (Math.random() > BUILDING_DENSITY) {
-                                currentZ += BLOCK_SIZE / 4;
-                                continue;
-                            }
+					// Base position with spacing, adjusted by offsets
+					const baseX = j * (BLOCK_SIZE + ROAD_WIDTH);
+					const baseZ = i * (BLOCK_SIZE + ROAD_WIDTH);
+					const x = baseX + offsetX - (chunkSize / 2) + BLOCK_SIZE;
+					const z = baseZ + offsetZ - (chunkSize / 2) + BLOCK_SIZE;
 
-                            const buildingType = noise.noise2D(chunkX + currentX * 0.1, chunkZ + currentZ * 0.1);
-                            let height, width, depth, color;
-                            const sizeNoise = noise.noise2D(chunkX + currentX * 0.2 + 300, chunkZ + currentZ * 0.2 + 300);
-                            if (sizeNoise < -0.5) { width = BLOCK_SIZE / 4; depth = BLOCK_SIZE / 4; }
-                            else if (sizeNoise < 0) { width = BLOCK_SIZE / 2; depth = BLOCK_SIZE / 2; }
-                            else if (sizeNoise < 0.5) { width = BLOCK_SIZE / 2; depth = BLOCK_SIZE; }
-                            else { width = BLOCK_SIZE * 0.75; depth = BLOCK_SIZE * 0.75; }
+					// Skip if outside chunk bounds (due to large offsets)
+					if (x - width / 2 < -chunkSize / 2 || x + width / 2 > chunkSize / 2 ||
+						z - depth / 2 < -chunkSize / 2 || z + depth / 2 > chunkSize / 2) {
+						continue;
+					}
 
-                            if (buildingType < -0.3) {
-                                height = 5 + Math.random() * 5;
-                                color = 0x888888;
-                            } else if (buildingType < 0.3) {
-                                height = 10 + Math.random() * 10;
-                                color = 0x666666;
-                            } else {
-                                height = 20 + Math.random() * 30;
-                                color = 0x999999;
-                            }
+					// Create single building
+					const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+					const buildingMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+					const building = new THREE.Mesh(buildingGeo, buildingMat);
+					building.position.set(x, height / 2, z);
+					chunkGroup.add(building);
 
-                            const gapChance = noise.noise2D(chunkX + currentX * 0.3 + 500, chunkZ + currentZ * 0.3 + 500);
-                            if (gapChance > 0.9) {
-                                width *= 0.9;
-                                depth *= 0.9;
-                            }
+					// Collision box in world coordinates
+					const worldX = chunkX * BASE_CHUNK_SIZE + x;
+					const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
+					collisions.push({
+						minX: worldX - width / 2,
+						maxX: worldX + width / 2,
+						minZ: worldZ - depth / 2,
+						maxZ: worldZ + depth / 2,
+						height: height
+					});
+				}
+			}
 
-                            const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-                            const buildingMat = new THREE.MeshLambertMaterial({ color });
-                            const building = new THREE.Mesh(buildingGeo, buildingMat);
-                            const worldX = chunkX * BASE_CHUNK_SIZE + currentX + width / 2;
-                            const worldZ = chunkZ * BASE_CHUNK_SIZE + currentZ + depth / 2;
-                            building.position.set(currentX + width / 2, height / 2, currentZ + depth / 2);
-                            chunkGroup.add(building);
-
-                            collisions.push({
-                                minX: worldX - width / 2,
-                                maxX: worldX + width / 2,
-                                minZ: worldZ - depth / 2,
-                                maxZ: worldZ + depth / 2,
-                                height: height
-                            });
-
-                            currentZ += depth;
-                            if (currentZ + depth > blockEndZ) break;
-                            lastWidth = width;
-                        }
-                        currentX += lastWidth || BLOCK_SIZE / 4;
-                        if (currentX + (lastWidth || BLOCK_SIZE / 4) > blockEndX) break;
-                    }
-                }
-            }
-
-            chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
-            chunkGroup.rotation.y = rotation;
-            return chunkGroup;
-        }
+			chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
+			// No rotation to keep blocks parallel
+			return chunkGroup;
+		}
 
         function updateChunks() {
             const camChunkX = Math.floor(camera.position.x / BASE_CHUNK_SIZE);
