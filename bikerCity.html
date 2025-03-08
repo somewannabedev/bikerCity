@@ -1,12 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Infinite Industrial City</title>
-    <style>body { margin: 0; overflow: hidden; }</style>
+    <title>Motorcycle City Ride</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px;
+        }
+    </style>
 </head>
 <body>
+    <div id="info">Speed: 0.00 | Time: 0.00s</div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -19,7 +33,7 @@
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x404040));
 
-        camera.position.set(20, 5, 100); // Adjusted starting position
+        camera.position.set(20, 5, 100);
         camera.rotation.y = Math.PI;
 
         const BASE_CHUNK_SIZE = 64;
@@ -27,6 +41,28 @@
         const chunks = {};
         const noise = new SimplexNoise();
         const collisions = [];
+
+        // Motorcycle variables
+        let motorcycle = null;
+        const maxLeanAngle = Math.PI / 6; // 30 degrees max lean
+
+        // Load Motorcycle GLB Model
+        const loader = new THREE.GLTFLoader();
+        loader.load(
+            'models/motorcycle.glb', // Adjust path to your GLB file
+            function (gltf) {
+                motorcycle = gltf.scene;
+                motorcycle.scale.set(0.08, 0.08, 0.08); // Adjust scale as needed
+                motorcycle.position.set(0, -7, -2); // In front of camera, above ground
+                camera.add(motorcycle); // Attach to camera so it moves with it
+                scene.add(camera); // Ensure camera is in scene
+                console.log('Motorcycle loaded');
+            },
+            undefined,
+            function (error) {
+                console.error('Error loading motorcycle:', error);
+            }
+        );
 
         function getChunkKey(x, z) {
             return `${Math.floor(x / BASE_CHUNK_SIZE)},${Math.floor(z / BASE_CHUNK_SIZE)}`;
@@ -157,8 +193,12 @@
 
         let baseSpeed = 0.5;
         let currentSpeed = baseSpeed;
+        const minSpeed = 0.2;
         const turnSpeed = 0.02;
         const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false };
+        let startTime = performance.now();
+        let leanAngle = 0;
+
         document.addEventListener('keydown', (e) => {
             if (e.key in keys) keys[e.key] = true;
         });
@@ -168,7 +208,7 @@
 
         function checkCollision(newX, newZ) {
             const cameraHeight = 5;
-            const cameraRadius = 2; // Increased radius for stricter collision
+            const cameraRadius = 1;
             for (const col of collisions) {
                 if (
                     newX + cameraRadius > col.minX && newX - cameraRadius < col.maxX &&
@@ -184,13 +224,26 @@
         function updateCamera() {
             if (keys['w'] || keys['W']) currentSpeed = Math.min(currentSpeed + 0.1, baseSpeed * 2);
             if (keys['s'] || keys['S']) {
-                currentSpeed = Math.max(currentSpeed - 0.1, 0); // Slow to 0, no reverse
+                currentSpeed = Math.max(currentSpeed - 0.1, minSpeed);
             } else if (!(keys['w'] || keys['W'])) {
-                currentSpeed += (baseSpeed - currentSpeed) * 0.05; // Return to baseSpeed if no S
+                currentSpeed += (baseSpeed - currentSpeed) * 0.05;
             }
 
-            if (keys['a']) camera.rotation.y += turnSpeed;
-            if (keys['d']) camera.rotation.y -= turnSpeed;
+            let turnAmount = 0;
+            if (keys['a']) turnAmount += turnSpeed;
+            if (keys['d']) turnAmount -= turnSpeed;
+            camera.rotation.y += turnAmount;
+
+            // Calculate lean based on turn
+            const leanTarget = +turnAmount * 200; // Proportional to turn speed
+            leanAngle += (leanTarget - leanAngle) * 0.003; // Smooth transition
+            leanAngle = Math.max(-maxLeanAngle, Math.min(maxLeanAngle, leanAngle));
+            camera.rotation.z = leanAngle;
+
+            // Apply lean to motorcycle if loaded
+            if (motorcycle) {
+                motorcycle.rotation.z = leanAngle;
+            }
 
             const newX = camera.position.x - Math.sin(camera.rotation.y) * currentSpeed;
             const newZ = camera.position.z - Math.cos(camera.rotation.y) * currentSpeed;
@@ -203,10 +256,17 @@
             camera.position.y = 5;
         }
 
+        function updateDisplay() {
+            const elapsedTime = (performance.now() - startTime) / 1000;
+            document.getElementById('info').innerText = 
+                `Speed: ${currentSpeed.toFixed(2)} | Time: ${elapsedTime.toFixed(2)}s`;
+        }
+
         function animate() {
             requestAnimationFrame(animate);
             updateCamera();
             updateChunks();
+            updateDisplay();
             renderer.render(scene, camera);
         }
         animate();
