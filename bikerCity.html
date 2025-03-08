@@ -123,7 +123,7 @@
 					const sizeNoise = (noise.noise2D(globalI * 0.1, globalJ * 0.1) + 1) / 2;
 					const width = BLOCK_SIZE * (0.5 + sizeNoise * 1.5); // 0.5 to 2.0 * BLOCK_SIZE
 					const depth = BLOCK_SIZE * (0.5 + (noise.noise2D(globalI * 0.1 + 100, globalJ * 0.1 + 100) + 1) / 2 * 1.5);
-					const height = 5 + sizeNoise * 25; // 5 to 30 units for visual interest
+					const height = 20 + sizeNoise * 30; // 5 to 30 units for visual interest
 
 					// Aggressive positional offset to disrupt the grid
 					const offsetX = noise.noise2D(globalI * 0.05, globalJ * 0.05 + 200) * BLOCK_SIZE;
@@ -242,7 +242,7 @@
             return false;
         }
 
-        let baseSpeed = 0.5;
+        let baseSpeed = 1;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
@@ -344,7 +344,7 @@
                 delete chunks[key];
             }
             collisions.length = 0;
-			baseSpeed = 0.5;
+			baseSpeed = 1;
             findSafeSpawn();
             console.log('World regenerated at new location');
         });
