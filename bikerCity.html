@@ -30,9 +30,9 @@
 <body>
     <div id="info">Speed: 0.00 | Time: 0.00s</div>
     <div id="controls">
-        <label>Base Chunk Size: <input type="range" id="baseChunkSize" min="32" max="128" value="64"></label>
+        <label>Base Chunk Size: <input type="range" id="baseChunkSize" min="64" max="512" value="256"></label>
         <label>Block Size: <input type="range" id="blockSize" min="6" max="24" value="12"></label>
-        <label>Road Width: <input type="range" id="roadWidth" min="2" max="8" value="4"></label>
+        <label>Road Width: <input type="range" id="roadWidth" min="4" max="32" value="16"></label>
         <label>Building Density: <input type="range" id="buildingDensity" min="0.5" max="1" step="0.05" value="1"></label>
         <label>View Distance: <input type="range" id="viewDistance" min="1" max="5" value="3"></label>
         <label><input type="checkbox" id="noCollisions"> Remove Collisions</label>
@@ -89,9 +89,9 @@
         );
 
         // World generation parameters
-        let BASE_CHUNK_SIZE = 128;
-        let BLOCK_SIZE = 12; // Note: Not directly used in new layout, kept for compatibility
-        let ROAD_WIDTH = 8;
+        let BASE_CHUNK_SIZE = 256;  // Increased for a larger world
+        let BLOCK_SIZE = 12;        // Kept for compatibility
+        let ROAD_WIDTH = 16;        // Increased for wider roads
         let BUILDING_DENSITY = 1;
         let VIEW_DISTANCE = 3;
 
@@ -112,12 +112,12 @@
 
             // Grid setup
             const GRID_CELL_SIZE = ROAD_WIDTH;
-            const gridSize = Math.ceil(BASE_CHUNK_SIZE / GRID_CELL_SIZE); // e.g., 64 / 4 = 16
+            const gridSize = Math.ceil(BASE_CHUNK_SIZE / GRID_CELL_SIZE);
             const grid = Array(gridSize).fill().map(() => Array(gridSize).fill(false));
 
             // Building parameters
-            const minSize = 2; // 2 grid cells = 8 units with ROAD_WIDTH=4
-            const maxSize = 5; // 5 grid cells = 20 units
+            const minSize = 2;
+            const maxSize = 5;
             const targetCells = Math.floor(gridSize * gridSize * BUILDING_DENSITY);
             let occupiedCells = 0;
             const buildings = [];
@@ -128,7 +128,6 @@
                 let placed = false;
                 for (let gy = 0; gy <= gridSize - size && !placed; gy++) {
                     for (let gx = 0; gx <= gridSize - size && !placed; gx++) {
-                        // Check if area plus border is clear
                         let canPlace = true;
                         for (let i = Math.max(0, gy - 1); i <= Math.min(gridSize - 1, gy + size); i++) {
                             for (let j = Math.max(0, gx - 1); j <= Math.min(gridSize - 1, gx + size); j++) {
@@ -140,7 +139,6 @@
                             if (!canPlace) break;
                         }
                         if (canPlace) {
-                            // Place building
                             for (let i = gy; i < gy + size; i++) {
                                 for (let j = gx; j < gx + size; j++) {
                                     grid[i][j] = true;
@@ -152,15 +150,15 @@
                         }
                     }
                 }
-                if (!placed) break; // No more space
+                if (!placed) break;
             }
 
-            // Create 3D building meshes
+            // Create building meshes
             buildings.forEach(building => {
                 const { gx, gy, size } = building;
                 const width = size * GRID_CELL_SIZE;
                 const depth = size * GRID_CELL_SIZE;
-                const height = 10 + Math.random() * 20; // Random height between 10 and 30
+                const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4); // Scaled with road width
                 const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
                 const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
 
@@ -170,7 +168,6 @@
                 buildingMesh.position.set(x, height / 2, z);
                 chunkGroup.add(buildingMesh);
 
-                // Collision box in world coordinates
                 const worldX = chunkX * BASE_CHUNK_SIZE + x;
                 const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
                 collisions.push({
@@ -187,41 +184,31 @@
         }
 
         function updateChunks() {
-            // For testing, generate only chunk (0,0)
-            const chunkX = 0;
-            const chunkZ = 0;
-            const key = getChunkKey(chunkX * BASE_CHUNK_SIZE, chunkZ * BASE_CHUNK_SIZE);
-            if (!chunks[key]) {
-                const chunk = generateChunk(chunkX, chunkZ);
-                scene.add(chunk);
-                chunks[key] = chunk;
-            }
-            // Remove any other chunks
-            for (const existingKey in chunks) {
-                if (existingKey !== key) {
-                    scene.remove(chunks[existingKey]);
-                    delete chunks[existingKey];
-                    // Clear collisions outside this chunk
-                    collisions.length = 0;
-                    const chunk = chunks[key];
-                    if (chunk) {
-                        chunk.children.forEach(child => {
-                            if (child.geometry.type === 'BoxGeometry') {
-                                const x = chunkX * BASE_CHUNK_SIZE + child.position.x;
-                                const z = chunkZ * BASE_CHUNK_SIZE + child.position.z;
-                                const width = child.geometry.parameters.width;
-                                const depth = child.geometry.parameters.depth;
-                                const height = child.geometry.parameters.height;
-                                collisions.push({
-                                    minX: x - width / 2,
-                                    maxX: x + width / 2,
-                                    minZ: z - depth / 2,
-                                    maxZ: z + depth / 2,
-                                    height: height
-                                });
-                            }
-                        });
+            const camChunkX = Math.floor(camera.position.x / BASE_CHUNK_SIZE);
+            const camChunkZ = Math.floor(camera.position.z / BASE_CHUNK_SIZE);
+            for (let x = camChunkX - VIEW_DISTANCE; x <= camChunkX + VIEW_DISTANCE; x++) {
+                for (let z = camChunkZ - VIEW_DISTANCE; z <= camChunkZ + VIEW_DISTANCE; z++) {
+                    const key = getChunkKey(x * BASE_CHUNK_SIZE, z * BASE_CHUNK_SIZE);
+                    if (!chunks[key]) {
+                        const chunk = generateChunk(x, z);
+                        scene.add(chunk);
+                        chunks[key] = chunk;
                     }
+                }
+            }
+            for (const key in chunks) {
+                const [chunkX, chunkZ] = key.split(',').map(Number);
+                if (Math.abs(chunkX - camChunkX) > VIEW_DISTANCE + 1 || Math.abs(chunkZ - camChunkZ) > VIEW_DISTANCE + 1) {
+                    scene.remove(chunks[key]);
+                    const chunkPosX = chunkX * BASE_CHUNK_SIZE;
+                    const chunkPosZ = chunkZ * BASE_CHUNK_SIZE;
+                    for (let i = collisions.length - 1; i >= 0; i--) {
+                        const col = collisions[i];
+                        if (Math.abs(col.minX - chunkPosX) < BASE_CHUNK_SIZE && Math.abs(col.minZ - chunkPosZ) < BASE_CHUNK_SIZE) {
+                            collisions.splice(i, 1);
+                        }
+                    }
+                    delete chunks[key];
                 }
             }
         }
@@ -242,8 +229,8 @@
         }
 
         function findSafeSpawn() {
-            let x = 0; // Start within chunk (0,0)
-            let z = 0;
+            let x = Math.random() * 1000 - 500;
+            let z = Math.random() * 1000 - 500;
             const y = 5;
             const clearDistance = 10;
             let attempts = 0;
@@ -264,18 +251,15 @@
 
                 x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
                 z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
-                // Keep within chunk bounds for testing
-                x = Math.max(-BASE_CHUNK_SIZE / 2, Math.min(BASE_CHUNK_SIZE / 2, x));
-                z = Math.max(-BASE_CHUNK_SIZE / 2, Math.min(BASE_CHUNK_SIZE / 2, z));
                 attempts++;
             }
 
-            console.warn('No safe spawn found, using center');
-            camera.position.set(0, 5, 0);
+            console.warn('No safe spawn found after', maxAttempts, 'attempts');
+            camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500);
             return false;
         }
 
-        let baseSpeed = 0.2;
+        let baseSpeed = 0.5;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
@@ -329,7 +313,7 @@
             }
 
             if (document.getElementById('topDownView').checked) {
-                camera.position.y = 80;
+                camera.position.y = 200;
                 camera.rotation.x = -Math.PI / 2;
                 camera.rotation.z = 0;
                 if (motorcycle) motorcycle.rotation.z = 0;
@@ -352,7 +336,6 @@
                 `Speed: ${currentSpeed.toFixed(2)} | Time: ${elapsedTime.toFixed(2)}s`;
         }
 
-        // Slider controls
         document.getElementById('baseChunkSize').addEventListener('input', (e) => {
             BASE_CHUNK_SIZE = parseInt(e.target.value);
             regenerateWorld();
@@ -374,24 +357,21 @@
             regenerateWorld();
         });
 
-        // Regenerate world
         function regenerateWorld() {
             for (const key in chunks) {
                 scene.remove(chunks[key]);
                 delete chunks[key];
             }
             collisions.length = 0;
-            baseSpeed = 0.2;
+            baseSpeed = 0.5;
             findSafeSpawn();
             console.log('World regenerated');
         }
         document.getElementById('regenerate').addEventListener('click', regenerateWorld);
 
-        // Background music
         const audio = document.getElementById('backgroundMusic');
         audio.play().catch(e => console.log('Audio play failed:', e));
 
-        // Initial setup
         findSafeSpawn();
 
         function animate() {
