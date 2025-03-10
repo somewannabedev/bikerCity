@@ -40,7 +40,7 @@
         <button id="regenerate">Regenerate World</button>
     </div>
     <audio id="backgroundMusic" loop>
-        <source src="music/background_music.mp3" type="audio/mpeg">
+        <source src="music/background_music.mp4" type="audio/mpeg">
     </audio>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
@@ -52,10 +52,17 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
+        // Scene lighting
         const light = new THREE.DirectionalLight(0xffffff, 1);
         light.position.set(1, 1, 1).normalize();
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x404040));
+
+        // Adjusted ambient lighting for cyberpunk mood
+        scene.add(new THREE.AmbientLight(0x202040)); // Dark blue ambient light
+
+        // Hemisphere light for blue ground glow
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x0000ff, 0.3);
+        scene.add(hemiLight);
 
         const chunks = {};
         const noise = new SimplexNoise();
@@ -89,11 +96,74 @@
         );
 
         // World generation parameters
-        let BASE_CHUNK_SIZE = 256;  // Increased for a larger world
-        let BLOCK_SIZE = 12;        // Kept for compatibility
-        let ROAD_WIDTH = 16;        // Increased for wider roads
+        let BASE_CHUNK_SIZE = 256;
+        let BLOCK_SIZE = 12;
+        let ROAD_WIDTH = 16;
         let BUILDING_DENSITY = 1;
         let VIEW_DISTANCE = 3;
+
+        // Neon colors for cyberpunk aesthetic
+        const neonColors = [0x00ffff, 0xff00ff, 0x00ff00, 0x0000ff]; // Cyan, magenta, lime green, electric blue
+
+        // Function to add neon strips along the top edges of buildings
+        function addNeonStrips(buildingMesh, width, height, depth) {
+            const color = neonColors[Math.floor(Math.random() * neonColors.length)];
+            const neonMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
+
+            // Top front edge
+            let neonGeo = new THREE.BoxGeometry(width, 0.1, 0.1);
+            let neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
+            neonMesh.position.set(0, height / 2, depth / 2);
+            buildingMesh.add(neonMesh);
+
+            // Top back edge
+            neonGeo = new THREE.BoxGeometry(width, 0.1, 0.1);
+            neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
+            neonMesh.position.set(0, height / 2, -depth / 2);
+            buildingMesh.add(neonMesh);
+
+            // Top left edge
+            neonGeo = new THREE.BoxGeometry(0.1, 0.1, depth);
+            neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
+            neonMesh.position.set(-width / 2, height / 2, 0);
+            buildingMesh.add(neonMesh);
+
+            // Top right edge
+            neonGeo = new THREE.BoxGeometry(0.1, 0.1, depth);
+            neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
+            neonMesh.position.set(width / 2, height / 2, 0);
+            buildingMesh.add(neonMesh);
+        }
+
+        // Function to add neon signage to the front face of buildings
+        function addSignage(buildingMesh, width, height, depth) {
+            if (Math.random() < 0.3) { // 30% chance to add a sign
+                const signWidth = width * 0.8;
+                const signHeight = height * 0.2;
+                const signGeo = new THREE.PlaneGeometry(signWidth, signHeight);
+                const color = neonColors[Math.floor(Math.random() * neonColors.length)];
+                const signMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
+                const signMesh = new THREE.Mesh(signGeo, signMaterial);
+                signMesh.position.set(0, height / 4, depth / 2 + 0.01);
+                buildingMesh.add(signMesh);
+            }
+        }
+
+        // Function to add small glowing details to the front face of buildings
+        function addGlowingDetails(buildingMesh, width, height, depth) {
+            const numDetails = Math.floor(Math.random() * 6); // 0 to 5 details
+            for (let i = 0; i < numDetails; i++) {
+                const detailSize = 0.5 + Math.random() * 1; // Between 0.5 and 1.5 units
+                const detailGeo = new THREE.BoxGeometry(detailSize, detailSize, detailSize);
+                const color = neonColors[Math.floor(Math.random() * neonColors.length)];
+                const detailMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
+                const detailMesh = new THREE.Mesh(detailGeo, detailMaterial);
+                const x = (Math.random() - 0.5) * width;
+                const y = (Math.random() - 0.5) * height;
+                detailMesh.position.set(x, y, depth / 2 + 0.01);
+                buildingMesh.add(detailMesh);
+            }
+        }
 
         function getChunkKey(x, z) {
             return `${Math.floor(x / BASE_CHUNK_SIZE)},${Math.floor(z / BASE_CHUNK_SIZE)}`;
@@ -158,15 +228,24 @@
                 const { gx, gy, size } = building;
                 const width = size * GRID_CELL_SIZE;
                 const depth = size * GRID_CELL_SIZE;
-                const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4); // Scaled with road width
+                const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4);
                 const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
                 const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
 
                 const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-                const buildingMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+                const buildingMat = new THREE.MeshPhongMaterial({
+                    color: 0x111111, // Dark near-black for cyberpunk look
+                    shininess: 10,
+                    specular: 0x222222
+                });
                 const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
                 buildingMesh.position.set(x, height / 2, z);
                 chunkGroup.add(buildingMesh);
+
+                // Add cyberpunk styling
+                addNeonStrips(buildingMesh, width, height, depth);
+                addSignage(buildingMesh, width, height, depth);
+                addGlowingDetails(buildingMesh, width, height, depth);
 
                 const worldX = chunkX * BASE_CHUNK_SIZE + x;
                 const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
@@ -259,7 +338,7 @@
             return false;
         }
 
-        let baseSpeed = 0.5;
+        let baseSpeed = 1;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
@@ -313,7 +392,7 @@
             }
 
             if (document.getElementById('topDownView').checked) {
-                camera.position.y = 200;
+                camera.position.y = 80;
                 camera.rotation.x = -Math.PI / 2;
                 camera.rotation.z = 0;
                 if (motorcycle) motorcycle.rotation.z = 0;
@@ -363,7 +442,8 @@
                 delete chunks[key];
             }
             collisions.length = 0;
-            baseSpeed = 0.5;
+            baseSpeed = 1;
+			audio.play().catch(e => console.log('Audio play failed:', e));
             findSafeSpawn();
             console.log('World regenerated');
         }
