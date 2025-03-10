@@ -384,41 +384,45 @@
         }
 
         function findSafeSpawn() {
-            let x = Math.random() * 1000 - 500;
-            let z = Math.random() * 1000 - 500;
-            const y = 5;
-            const clearDistance = 100;
-            let attempts = 0;
-            const maxAttempts = 100;
+			let x = Math.random() * 1000 - 500;
+			let z = Math.random() * 1000 - 500;
+			const y = 5;
+			let attempts = 0;
+			const maxAttempts = 100;
 
-            while (attempts < maxAttempts) {
-                updateChunks();
-                const directionZ = -Math.cos(camera.rotation.y);
-                const directionX = -Math.sin(camera.rotation.y);
-                const aheadX = x + directionX * clearDistance;
-                const aheadZ = z + directionZ * clearDistance;
-
-                if (!checkCollision(x, z) && !checkCollision(aheadX, aheadZ)) {
-                    camera.position.set(x, y, z);
-                    console.log('Safe spawn found at:', x, z);
-                    return true;
-                }
-
-                x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
-                z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
-                attempts++;
-            }
-
-            console.warn('No safe spawn found after', maxAttempts, 'attempts');
-            camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500);
-            return false;
-        }
+			while (attempts < maxAttempts) {
+				updateChunks();
+				const directionX = -Math.sin(camera.rotation.y);
+				const directionZ = -Math.cos(camera.rotation.y);
+				const checkDistances = [0, 10, 20, 30, 40, 50]; // Check up to 50 units ahead
+				let isSafe = true;
+				for (const dist of checkDistances) {
+					const checkX = x + directionX * dist;
+					const checkZ = z + directionZ * dist;
+					if (checkCollision(checkX, checkZ)) {
+						isSafe = false;
+						break;
+					}
+				}
+				if (isSafe) {
+					camera.position.set(x, y, z);
+					console.log('Safe spawn found at:', x, z);
+					return true;
+				}
+				x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
+				z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
+				attempts++;
+			}
+			console.warn('No safe spawn found after', maxAttempts, 'attempts');
+			camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500);
+			return false;
+		}								
 
         let baseSpeed = 1;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
-        const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false };
+		const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false, ' ': false };
         let startTime = performance.now();
         let lastSpeedIncrease = startTime;
         let leanAngle = 0;
@@ -440,8 +444,12 @@
 
             let turnAmount = 0;
             if (keys['a']) turnAmount += turnSpeed;
-            if (keys['d']) turnAmount -= turnSpeed;
-            camera.rotation.y += turnAmount;
+			if (keys['d']) turnAmount -= turnSpeed;
+			if (keys[' '] && turnAmount !== 0) {
+				turnAmount *= 2; // Sharper turn
+				currentSpeed *= 0.9; // Slow down to simulate skid
+			}
+			camera.rotation.y += turnAmount;
 
             const leanTarget = turnAmount * 200;
             if (turnAmount === 0) {
