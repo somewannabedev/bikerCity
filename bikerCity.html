@@ -149,21 +149,27 @@
             }
         }
 
-        // Function to add small glowing details to the front face of buildings
-        function addGlowingDetails(buildingMesh, width, height, depth) {
-            const numDetails = Math.floor(Math.random() * 6); // 0 to 5 details
-            for (let i = 0; i < numDetails; i++) {
-                const detailSize = 0.5 + Math.random() * 1; // Between 0.5 and 1.5 units
-                const detailGeo = new THREE.BoxGeometry(detailSize, detailSize, detailSize);
-                const color = neonColors[Math.floor(Math.random() * neonColors.length)];
-                const detailMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
-                const detailMesh = new THREE.Mesh(detailGeo, detailMaterial);
-                const x = (Math.random() - 0.5) * width;
-                const y = (Math.random() - 0.5) * height;
-                detailMesh.position.set(x, y, depth / 2 + 0.01);
-                buildingMesh.add(detailMesh);
-            }
-        }
+        // Function to add neon windows to the front face of buildings
+		function addNeonWindows(buildingMesh, width, height, depth) {
+			const numWindows = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
+			const windowSize = width * 0.2; // Each window is 20% of the building width
+			const windowSpacing = width * 0.25; // Space between windows
+
+			const windowMaterial = new THREE.MeshBasicMaterial({ 
+				color: 0x00ffff,  // Light blue neon
+				emissive: 0x00ffff, 
+				emissiveIntensity: 0.8 
+			});
+
+			const startX = -((numWindows - 1) * windowSpacing) / 2; // Center the windows
+
+			for (let i = 0; i < numWindows; i++) {
+				const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
+				const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
+				windowMesh.position.set(startX + i * windowSpacing, height / 4, depth / 2 + 0.01);
+				buildingMesh.add(windowMesh);
+			}
+		}
 
         function getChunkKey(x, z) {
             return `${Math.floor(x / BASE_CHUNK_SIZE)},${Math.floor(z / BASE_CHUNK_SIZE)}`;
@@ -245,7 +251,8 @@
                 // Add cyberpunk styling
                 addNeonStrips(buildingMesh, width, height, depth);
                 addSignage(buildingMesh, width, height, depth);
-                addGlowingDetails(buildingMesh, width, height, depth);
+                //addGlowingDetails(buildingMesh, width, height, depth);
+				addNeonWindows(buildingMesh, width, height, depth);
 
                 const worldX = chunkX * BASE_CHUNK_SIZE + x;
                 const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
