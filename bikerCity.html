@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Motorcycle City Ride</title>
+    <title>Biker City</title>
     <style>
         body { margin: 0; overflow: hidden; }
         #info {
@@ -25,11 +25,24 @@
         }
         #controls label { display: block; margin: 5px 0; }
         #controls button { margin-top: 10px; }
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+        }
+        #gameOverScreen {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div id="info">Speed: 0.00 | Time: 0.00s</div>
-    <div id="controls">
+    <div id="controls" style="display: none;">
         <label>Base Chunk Size: <input type="range" id="baseChunkSize" min="64" max="512" value="256"></label>
         <label>Block Size: <input type="range" id="blockSize" min="6" max="24" value="12"></label>
         <label>Road Width: <input type="range" id="roadWidth" min="4" max="32" value="16"></label>
@@ -39,28 +52,43 @@
         <label><input type="checkbox" id="topDownView"> Top Down View</label>
         <button id="regenerate">Regenerate World</button>
     </div>
-    <audio id="backgroundMusic" loop>
-        <source src="music/background_music.mp4" type="audio/mpeg">
-    </audio>
+    <div id="startScreen">
+        <h1>Biker City</h1>
+        <p>Controls:</p>
+        <p>W or Up: Accelerate</p>
+        <p>S or Down: Decelerate</p>
+        <p>A or Left: Turn Left</p>
+        <p>D or Right: Turn Right</p>
+        <p>Space: Handbrake Turn (while turning)</p>
+        <button id="startButton">Start Game</button>
+		
+    </div>
+    <div id="gameOverScreen">
+        <h1>Game Over</h1>
+        <p>You survived for <span id="survivalTime">0</span> seconds.</p>
+        <button id="tryAgainButton">Try Again</button>
+    </div>
+    <audio id="backgroundMusic" loop></audio>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.134/examples/js/loaders/GLTFLoader.js"></script>
     <script>
+		// Define an array of audio tracks
+		const audioTracks = [
+			'music/background1.mp4',
+			'music/background2.mp4',
+			'music/background3.mp4'
+		];
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        // Scene lighting
         const light = new THREE.DirectionalLight(0xffffff, 1);
         light.position.set(1, 1, 1).normalize();
         scene.add(light);
-
-        // Adjusted ambient lighting for cyberpunk mood
-        scene.add(new THREE.AmbientLight(0x202040)); // Dark blue ambient light
-
-        // Hemisphere light for blue ground glow
+        scene.add(new THREE.AmbientLight(0x202040));
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x0000ff, 0.3);
         scene.add(hemiLight);
 
@@ -68,12 +96,10 @@
         const noise = new SimplexNoise();
         const collisions = [];
 
-        // Motorcycle variables
         let motorcycle = null;
         const maxLeanAngle = Math.PI / 6;
         let motorcycleWidth = 1, motorcycleDepth = 1;
 
-        // Load Motorcycle GLB Model
         const loader = new THREE.GLTFLoader();
         loader.load(
             'models/motorcycle.glb',
@@ -83,7 +109,6 @@
                 motorcycle.position.set(0, -7, -2);
                 camera.add(motorcycle);
                 scene.add(camera);
-
                 const box = new THREE.Box3().setFromObject(motorcycle);
                 motorcycleWidth = (box.max.x - box.min.x) * 0.08;
                 motorcycleDepth = (box.max.z - box.min.z) * 0.08;
@@ -95,130 +120,83 @@
             }
         );
 
-        // World generation parameters
         let BASE_CHUNK_SIZE = 256;
         let BLOCK_SIZE = 12;
         let ROAD_WIDTH = 16;
         let BUILDING_DENSITY = 1;
         let VIEW_DISTANCE = 3;
+		
+		// Function to randomly select a track
+		function setRandomTrack() {
+			const randomIndex = Math.floor(Math.random() * audioTracks.length);
+			const selectedTrack = audioTracks[randomIndex];
+			audio.src = selectedTrack;
+			console.log('Selected track:', selectedTrack);
+		}
+				
+        const neonColors = [0x00ffff, 0xff00ff, 0x00ff00, 0x0000ff];
 
-        // Neon colors for cyberpunk aesthetic
-        const neonColors = [0x00ffff, 0xff00ff, 0x00ff00, 0x0000ff]; // Cyan, magenta, lime green, electric blue
-
-        // Function to add neon strips along the top edges of buildings
         function addNeonStrips(buildingMesh, width, height, depth) {
             const color = neonColors[Math.floor(Math.random() * neonColors.length)];
-            const neonMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
-
-            // Top front edge
+            const neonMaterial = new THREE.MeshBasicMaterial({ color: color});
             let neonGeo = new THREE.BoxGeometry(width, 0.1, 0.1);
             let neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
             neonMesh.position.set(0, height / 2, depth / 2);
             buildingMesh.add(neonMesh);
-
-            // Top back edge
             neonGeo = new THREE.BoxGeometry(width, 0.1, 0.1);
             neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
             neonMesh.position.set(0, height / 2, -depth / 2);
             buildingMesh.add(neonMesh);
-
-            // Top left edge
             neonGeo = new THREE.BoxGeometry(0.1, 0.1, depth);
             neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
             neonMesh.position.set(-width / 2, height / 2, 0);
             buildingMesh.add(neonMesh);
-
-            // Top right edge
             neonGeo = new THREE.BoxGeometry(0.1, 0.1, depth);
             neonMesh = new THREE.Mesh(neonGeo, neonMaterial);
             neonMesh.position.set(width / 2, height / 2, 0);
             buildingMesh.add(neonMesh);
         }
 
-        // Function to add neon signage to the front face of buildings
         function addSignage(buildingMesh, width, height, depth) {
-            if (Math.random() < 0.3) { // 30% chance to add a sign
+            if (Math.random() < 0.3) {
                 const signWidth = width * 0.8;
                 const signHeight = height * 0.2;
                 const signGeo = new THREE.PlaneGeometry(signWidth, signHeight);
                 const color = neonColors[Math.floor(Math.random() * neonColors.length)];
-                const signMaterial = new THREE.MeshBasicMaterial({ color: color, emissive: color });
+                const signMaterial = new THREE.MeshBasicMaterial({ color: color });
                 const signMesh = new THREE.Mesh(signGeo, signMaterial);
                 signMesh.position.set(0, height / 4, depth / 2 + 0.01);
                 buildingMesh.add(signMesh);
-				return true;
+                return true;
             }
-			return false;
+            return false;
         }
-		
-		function createBuildingTexture() {
-			const canvas = document.createElement('canvas');
-			canvas.width = 256;
-			canvas.height = 256;
-			const ctx = canvas.getContext('2d');
 
-			// Left half: window pattern
-			ctx.fillStyle = 'black';
-			ctx.fillRect(0, 0, 128, 256);
-			ctx.fillStyle = '#0033CC'; // Light blue for neon windows
-			const windowSize = 32;
-			const spacing = 16;
-			const numWindowsX = 3;
-			const numWindowsY = 4;
-			for (let y = 0; y < numWindowsY; y++) {
-				for (let x = 0; x < numWindowsX; x++) {
-					const wx = x * (windowSize + spacing) + spacing / 2;
-					const wy = y * (windowSize + spacing) + spacing / 2;
-					if (wx + windowSize <= 128) {
-						ctx.fillRect(wx, wy, windowSize, windowSize);
-					}
-				}
-			}
-
-			// Right half: black
-			ctx.fillStyle = 'black';
-			ctx.fillRect(128, 0, 128, 256);
-
-			return new THREE.CanvasTexture(canvas);
-		}
-
-        // Function to add neon windows to the front face of buildings
-		function addNeonWindows(buildingMesh, width, height, depth, skipFront = false) {
-			//const numWindows = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
-			const numWindowsPerRow = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
-			const windowSize = width * 0.2; // Each window is 20% of the building width
-			const windowSpacing = width * 0.25; // Space between windows
-			const numRows = 2;
-			const rowSpacing = height / (numRows + 1); // Space rows evenly up the building
-			const windowMaterial = new THREE.MeshBasicMaterial({ 
-				color: 0x0033CCCC,  // Light blue neon
-				emissive: 0x0033CCCC 
-			});
-
-			function createWindowsOnSide(xOffset, zOffset, rotationY) {
-				for (let row = 0; row < numRows; row++) {
-					const yPos = rowSpacing * (row + 1) - height / 2; // Evenly space rows vertically
-					const startX = -((numWindowsPerRow - 1) * windowSpacing) / 2; // Center horizontally
-
-					for (let i = 0; i < numWindowsPerRow; i++) {
-						const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
-						const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
-						windowMesh.position.set(startX + i * windowSpacing + xOffset, yPos, zOffset);
-						windowMesh.rotation.y = rotationY; // Rotate to face the right direction
-						buildingMesh.add(windowMesh);
-					}
-				}
-			}
-
-			// Add windows to all four sides
-			if (!skipFront) createWindowsOnSide(0, depth / 2 + 0.01, 0); // Front
-			//createWindowsOnSide(0, -depth / 2 - 0.01, Math.PI); // Back
-			//createWindowsOnSide(-width / 2 - 0.01, 0, Math.PI / 2); // Left
-			//createWindowsOnSide(width / 2 + 0.01, 0, -Math.PI / 2); // Right
-
-
-			
-		}
+        function createBuildingTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, 128, 256);
+            ctx.fillStyle = '#4deeea';
+            const windowSize = 32;
+            const spacing = 16;
+            const numWindowsX = 3;
+            const numWindowsY = 4;
+            for (let y = 0; y < numWindowsY; y++) {
+                for (let x = 0; x < numWindowsX; x++) {
+                    const wx = x * (windowSize + spacing) + spacing / 2;
+                    const wy = y * (windowSize + spacing) + spacing / 2;
+                    if (wx + windowSize <= 128) {
+                        ctx.fillRect(wx, wy, windowSize, windowSize);
+                    }
+                }
+            }
+            ctx.fillStyle = 'black';
+            ctx.fillRect(128, 0, 128, 256);
+            return new THREE.CanvasTexture(canvas);
+        }
 
         function getChunkKey(x, z) {
             return `${Math.floor(x / BASE_CHUNK_SIZE)},${Math.floor(z / BASE_CHUNK_SIZE)}`;
@@ -227,27 +205,21 @@
         function generateChunk(chunkX, chunkZ) {
             const chunkGroup = new THREE.Group();
             const chunkSize = BASE_CHUNK_SIZE;
-
-            // Ground plane
             const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
             const groundMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
             const ground = new THREE.Mesh(groundGeo, groundMat);
             ground.rotation.x = -Math.PI / 2;
             chunkGroup.add(ground);
 
-            // Grid setup
             const GRID_CELL_SIZE = ROAD_WIDTH;
             const gridSize = Math.ceil(BASE_CHUNK_SIZE / GRID_CELL_SIZE);
             const grid = Array(gridSize).fill().map(() => Array(gridSize).fill(false));
-
-            // Building parameters
             const minSize = 2;
             const maxSize = 5;
             const targetCells = Math.floor(gridSize * gridSize * BUILDING_DENSITY);
             let occupiedCells = 0;
             const buildings = [];
 
-            // Place buildings
             while (occupiedCells < targetCells) {
                 const size = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
                 let placed = false;
@@ -277,62 +249,55 @@
                 }
                 if (!placed) break;
             }
-			
-			
-			// Create building texture once per chunk
-			const buildingTexture = createBuildingTexture();
 
-			buildings.forEach(building => {
-				const { gx, gy, size } = building;
-				const width = size * GRID_CELL_SIZE;
-				const depth = size * GRID_CELL_SIZE;
-				const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4);
-				const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
-				const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
+            const buildingTexture = createBuildingTexture();
 
-				const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+            buildings.forEach(building => {
+                const { gx, gy, size } = building;
+                const width = size * GRID_CELL_SIZE;
+                const depth = size * GRID_CELL_SIZE;
+                const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4);
+                const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
+                const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
 
-				// Adjust UVs: sides to [0, 0.5], top/bottom to [0.5, 1]
-				const uvAttribute = buildingGeo.attributes.uv;
-				for (let i = 0; i < uvAttribute.count; i++) {
-					const faceIndex = Math.floor(i / 4); // 4 vertices per face
-					const u = uvAttribute.getX(i);
-					const v = uvAttribute.getY(i);
-					if (faceIndex === 2 || faceIndex === 3) { // Top and bottom
-						uvAttribute.setX(i, 0.5 + u * 0.5);
-					} else { // Sides (0, 1, 4, 5)
-						uvAttribute.setX(i, u * 0.5);
-					}
-				}
+                const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+                const uvAttribute = buildingGeo.attributes.uv;
+                for (let i = 0; i < uvAttribute.count; i++) {
+                    const faceIndex = Math.floor(i / 4);
+                    const u = uvAttribute.getX(i);
+                    const v = uvAttribute.getY(i);
+                    if (faceIndex === 2 || faceIndex === 3) {
+                        uvAttribute.setX(i, 0.5 + u * 0.5);
+                    } else {
+                        uvAttribute.setX(i, u * 0.5);
+                    }
+                }
 
-				const buildingMat = new THREE.MeshPhongMaterial({
-					color: 0x111111,
-					shininess: 10,
-					specular: 0x222222,
-					emissive: 0x0066FFFF, // Match window color
-					emissiveMap: buildingTexture
-				});
+                const buildingMat = new THREE.MeshPhongMaterial({
+                    color: 0x111111,
+                    shininess: 10,
+                    specular: 0x222222,
+                    emissive: 0x0066FFFF,
+                    emissiveMap: buildingTexture
+                });
 
-				const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
-				buildingMesh.position.set(x, height / 2, z);
-				chunkGroup.add(buildingMesh);
+                const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
+                buildingMesh.position.set(x, height / 2, z);
+                chunkGroup.add(buildingMesh);
 
-				// Add cyberpunk styling
-				addNeonStrips(buildingMesh, width, height, depth);
-				const hasSign = addSignage(buildingMesh, width, height, depth);
-				// Remove addNeonWindows call since windows are now in the texture
-				// addNeonWindows(buildingMesh, width, height, depth, hasSign);
+                addNeonStrips(buildingMesh, width, height, depth);
+                const hasSign = addSignage(buildingMesh, width, height, depth);
 
-				const worldX = chunkX * BASE_CHUNK_SIZE + x;
-				const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
-				collisions.push({
-					minX: worldX - width / 2,
-					maxX: worldX + width / 2,
-					minZ: worldZ - depth / 2,
-					maxZ: worldZ + depth / 2,
-					height: height
-				});
-			});
+                const worldX = chunkX * BASE_CHUNK_SIZE + x;
+                const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
+                collisions.push({
+                    minX: worldX - width / 2,
+                    maxX: worldX + width / 2,
+                    minZ: worldZ - depth / 2,
+                    maxZ: worldZ + depth / 2,
+                    height: height
+                });
+            });
 
             chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
             return chunkGroup;
@@ -384,54 +349,56 @@
         }
 
         function findSafeSpawn() {
-			let x = Math.random() * 1000 - 500;
-			let z = Math.random() * 1000 - 500;
-			const y = 5;
-			let attempts = 0;
-			const maxAttempts = 100;
+            let x = Math.random() * 1000 - 500;
+            let z = Math.random() * 1000 - 500;
+            const y = 5;
+            let attempts = 0;
+            const maxAttempts = 100;
 
-			while (attempts < maxAttempts) {
-				updateChunks();
-				const directionX = -Math.sin(camera.rotation.y);
-				const directionZ = -Math.cos(camera.rotation.y);
-				const checkDistances = [0, 10, 20, 30, 40, 50]; // Check up to 50 units ahead
-				let isSafe = true;
-				for (const dist of checkDistances) {
-					const checkX = x + directionX * dist;
-					const checkZ = z + directionZ * dist;
-					if (checkCollision(checkX, checkZ)) {
-						isSafe = false;
-						break;
-					}
-				}
-				if (isSafe) {
-					camera.position.set(x, y, z);
-					console.log('Safe spawn found at:', x, z);
-					return true;
-				}
-				x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
-				z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
-				attempts++;
-			}
-			console.warn('No safe spawn found after', maxAttempts, 'attempts');
-			camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500);
-			return false;
-		}								
+            while (attempts < maxAttempts) {
+                updateChunks();
+                const directionX = -Math.sin(0); // Force neutral direction to avoid inheriting rotation
+                const directionZ = -Math.cos(0); // Force neutral direction
+                const checkDistances = [0, 10, 20, 30, 40, 50];
+                let isSafe = true;
+                for (const dist of checkDistances) {
+                    const checkX = x + directionX * dist;
+                    const checkZ = z + directionZ * dist;
+                    if (checkCollision(checkX, checkZ)) {
+                        isSafe = false;
+                        break;
+                    }
+                }
+                if (isSafe) {
+                    camera.position.set(x, y, z);
+					leanAngle = 0;
+                    console.log('Safe spawn found at:', x, z);
+                    return true;
+                }
+                x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
+                z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
+                attempts++;
+            }
+            console.warn('No safe spawn found after', maxAttempts, 'attempts');
+            camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500);
+            return false;
+        }
 
+        let gameState = 'start';
         let baseSpeed = 1;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
-		const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false, ' ': false };
+        const keys = { 'w': false, 'a': false, 's': false, 'd': false, 'W': false, 'S': false, ' ': false };
         let startTime = performance.now();
         let lastSpeedIncrease = startTime;
         let leanAngle = 0;
 
         document.addEventListener('keydown', (e) => {
-            if (e.key in keys) keys[e.key] = true;
+            if (gameState === 'playing' && e.key in keys) keys[e.key] = true;
         });
         document.addEventListener('keyup', (e) => {
-            if (e.key in keys) keys[e.key] = false;
+            if (gameState === 'playing' && e.key in keys) keys[e.key] = false;
         });
 
         function updateCamera() {
@@ -444,12 +411,12 @@
 
             let turnAmount = 0;
             if (keys['a']) turnAmount += turnSpeed;
-			if (keys['d']) turnAmount -= turnSpeed;
-			if (keys[' '] && turnAmount !== 0) {
-				turnAmount *= 2; // Sharper turn
-				currentSpeed *= 0.9; // Slow down to simulate skid
-			}
-			camera.rotation.y += turnAmount;
+            if (keys['d']) turnAmount -= turnSpeed;
+            if (keys[' '] && turnAmount !== 0) {
+                turnAmount *= 2;
+                currentSpeed *= 0.9;
+            }
+            camera.rotation.y += turnAmount;
 
             const leanTarget = turnAmount * 200;
             if (turnAmount === 0) {
@@ -470,7 +437,13 @@
             const newX = camera.position.x - Math.sin(camera.rotation.y) * adjustedSpeed;
             const newZ = camera.position.z - Math.cos(camera.rotation.y) * adjustedSpeed;
 
-            if (!checkCollision(newX, newZ)) {
+            if (checkCollision(newX, newZ)) {
+				leanAngle = 0;
+				camera.rotation.z = 0;
+                gameState = 'gameover';
+                document.getElementById('survivalTime').innerText = ((performance.now() - startTime) / 1000).toFixed(2);
+                document.getElementById('gameOverScreen').style.display = 'block';
+            } else {
                 camera.position.x = newX;
                 camera.position.z = newZ;
             }
@@ -527,22 +500,39 @@
             }
             collisions.length = 0;
             baseSpeed = 1;
-			audio.play().catch(e => console.log('Audio play failed:', e));
+            currentSpeed = baseSpeed;
+            camera.rotation.set(0, 0, 0); // Reset camera rotation (x, y, z)
             findSafeSpawn();
-            console.log('World regenerated');
+            console.log('World regenerated with leanAngle:', leanAngle, 'camera.rotation:', camera.rotation);
         }
+
         document.getElementById('regenerate').addEventListener('click', regenerateWorld);
 
         const audio = document.getElementById('backgroundMusic');
-        audio.play().catch(e => console.log('Audio play failed:', e));
 
-        findSafeSpawn();
+        document.getElementById('startButton').addEventListener('click', () => {
+            document.getElementById('startScreen').style.display = 'none';
+            gameState = 'playing';
+            startTime = performance.now();
+            lastSpeedIncrease = startTime;
+            baseSpeed = 1;
+            currentSpeed = baseSpeed;
+			setRandomTrack();
+            findSafeSpawn();
+            audio.play().catch(e => console.log('Audio play failed:', e));
+        });
+
+        document.getElementById('tryAgainButton').addEventListener('click', () => {
+            location.reload();
+        });
 
         function animate() {
             requestAnimationFrame(animate);
-            updateCamera();
-            updateChunks();
-            updateDisplay();
+            if (gameState === 'playing') {
+                updateCamera();
+                updateChunks();
+                updateDisplay();
+            }
             renderer.render(scene, camera);
         }
         animate();
