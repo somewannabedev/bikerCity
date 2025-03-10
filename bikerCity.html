@@ -89,9 +89,9 @@
         );
 
         // World generation parameters
-        let BASE_CHUNK_SIZE = 64;
-        let BLOCK_SIZE = 24;
-        let ROAD_WIDTH = 4;
+        let BASE_CHUNK_SIZE = 128;
+        let BLOCK_SIZE = 12; // Note: Not directly used in new layout, kept for compatibility
+        let ROAD_WIDTH = 8;
         let BUILDING_DENSITY = 1;
         let VIEW_DISTANCE = 3;
 
@@ -100,104 +100,134 @@
         }
 
         function generateChunk(chunkX, chunkZ) {
-			const chunkGroup = new THREE.Group();
-			const chunkSize = BASE_CHUNK_SIZE;
+            const chunkGroup = new THREE.Group();
+            const chunkSize = BASE_CHUNK_SIZE;
 
-			// Ground plane
-			const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
-			const groundMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
-			const ground = new THREE.Mesh(groundGeo, groundMat);
-			ground.rotation.x = -Math.PI / 2;
-			chunkGroup.add(ground);
+            // Ground plane
+            const groundGeo = new THREE.PlaneGeometry(chunkSize, chunkSize);
+            const groundMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            chunkGroup.add(ground);
 
-			// Calculate approximate grid size for initial placement
-			const gridSize = Math.floor(chunkSize / (BLOCK_SIZE + ROAD_WIDTH)) + 1;
+            // Grid setup
+            const GRID_CELL_SIZE = ROAD_WIDTH;
+            const gridSize = Math.ceil(BASE_CHUNK_SIZE / GRID_CELL_SIZE); // e.g., 64 / 4 = 16
+            const grid = Array(gridSize).fill().map(() => Array(gridSize).fill(false));
 
-			// Generate blocks with significant variation
-			for (let i = 0; i < gridSize; i++) {
-				const globalI = chunkZ * gridSize + i;
-				for (let j = 0; j < gridSize; j++) {
-					const globalJ = chunkX * gridSize + j;
+            // Building parameters
+            const minSize = 2; // 2 grid cells = 8 units with ROAD_WIDTH=4
+            const maxSize = 5; // 5 grid cells = 20 units
+            const targetCells = Math.floor(gridSize * gridSize * BUILDING_DENSITY);
+            let occupiedCells = 0;
+            const buildings = [];
 
-					// Vary block size significantly (0.5 to 2.0 * BLOCK_SIZE)
-					const sizeNoise = (noise.noise2D(globalI * 0.1, globalJ * 0.1) + 1) / 2;
-					const width = BLOCK_SIZE * (0.5 + sizeNoise * 1.5); // 0.5 to 2.0 * BLOCK_SIZE
-					const depth = BLOCK_SIZE * (0.5 + (noise.noise2D(globalI * 0.1 + 100, globalJ * 0.1 + 100) + 1) / 2 * 1.5);
-					const height = 20 + sizeNoise * 30; // 5 to 30 units for visual interest
-
-					// Aggressive positional offset to disrupt the grid
-					const offsetX = noise.noise2D(globalI * 0.05, globalJ * 0.05 + 200) * BLOCK_SIZE;
-					const offsetZ = noise.noise2D(globalI * 0.05 + 300, globalJ * 0.05 + 400) * BLOCK_SIZE;
-
-					// Base position with spacing, adjusted by offsets
-					const baseX = j * (BLOCK_SIZE + ROAD_WIDTH);
-					const baseZ = i * (BLOCK_SIZE + ROAD_WIDTH);
-					const x = baseX + offsetX - (chunkSize / 2) + BLOCK_SIZE;
-					const z = baseZ + offsetZ - (chunkSize / 2) + BLOCK_SIZE;
-
-					// Skip if outside chunk bounds (due to large offsets)
-					if (x - width / 2 < -chunkSize / 2 || x + width / 2 > chunkSize / 2 ||
-						z - depth / 2 < -chunkSize / 2 || z + depth / 2 > chunkSize / 2) {
-						continue;
-					}
-
-					// Create single building
-					const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-					const buildingMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-					const building = new THREE.Mesh(buildingGeo, buildingMat);
-					building.position.set(x, height / 2, z);
-					chunkGroup.add(building);
-
-					// Collision box in world coordinates
-					const worldX = chunkX * BASE_CHUNK_SIZE + x;
-					const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
-					collisions.push({
-						minX: worldX - width / 2,
-						maxX: worldX + width / 2,
-						minZ: worldZ - depth / 2,
-						maxZ: worldZ + depth / 2,
-						height: height
-					});
-				}
-			}
-
-			chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
-			// No rotation to keep blocks parallel
-			return chunkGroup;
-		}
-
-        function updateChunks() {
-            const camChunkX = Math.floor(camera.position.x / BASE_CHUNK_SIZE);
-            const camChunkZ = Math.floor(camera.position.z / BASE_CHUNK_SIZE);
-            for (let x = camChunkX - VIEW_DISTANCE; x <= camChunkX + VIEW_DISTANCE; x++) {
-                for (let z = camChunkZ - VIEW_DISTANCE; z <= camChunkZ + VIEW_DISTANCE; z++) {
-                    const key = getChunkKey(x * BASE_CHUNK_SIZE, z * BASE_CHUNK_SIZE);
-                    if (!chunks[key]) {
-                        const chunk = generateChunk(x, z);
-                        scene.add(chunk);
-                        chunks[key] = chunk;
-                    }
-                }
-            }
-            for (const key in chunks) {
-                const [x, z] = key.split(',').map(Number);
-                if (Math.abs(x - camChunkX) > VIEW_DISTANCE + 1 || Math.abs(z - camChunkZ) > VIEW_DISTANCE + 1) {
-                    scene.remove(chunks[key]);
-                    const chunkPosX = x * BASE_CHUNK_SIZE;
-                    const chunkPosZ = z * BASE_CHUNK_SIZE;
-                    for (let i = collisions.length - 1; i >= 0; i--) {
-                        const col = collisions[i];
-                        if (Math.abs(col.minX - chunkPosX) < BASE_CHUNK_SIZE && Math.abs(col.minZ - chunkPosZ) < BASE_CHUNK_SIZE) {
-                            collisions.splice(i, 1);
+            // Place buildings
+            while (occupiedCells < targetCells) {
+                const size = Math.floor(Math.random() * (maxSize - minSize + 1)) + minSize;
+                let placed = false;
+                for (let gy = 0; gy <= gridSize - size && !placed; gy++) {
+                    for (let gx = 0; gx <= gridSize - size && !placed; gx++) {
+                        // Check if area plus border is clear
+                        let canPlace = true;
+                        for (let i = Math.max(0, gy - 1); i <= Math.min(gridSize - 1, gy + size); i++) {
+                            for (let j = Math.max(0, gx - 1); j <= Math.min(gridSize - 1, gx + size); j++) {
+                                if (grid[i][j]) {
+                                    canPlace = false;
+                                    break;
+                                }
+                            }
+                            if (!canPlace) break;
+                        }
+                        if (canPlace) {
+                            // Place building
+                            for (let i = gy; i < gy + size; i++) {
+                                for (let j = gx; j < gx + size; j++) {
+                                    grid[i][j] = true;
+                                }
+                            }
+                            buildings.push({ gx, gy, size });
+                            occupiedCells += size * size;
+                            placed = true;
                         }
                     }
-                    delete chunks[key];
+                }
+                if (!placed) break; // No more space
+            }
+
+            // Create 3D building meshes
+            buildings.forEach(building => {
+                const { gx, gy, size } = building;
+                const width = size * GRID_CELL_SIZE;
+                const depth = size * GRID_CELL_SIZE;
+                const height = 10 + Math.random() * 20; // Random height between 10 and 30
+                const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
+                const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
+
+                const buildingGeo = new THREE.BoxGeometry(width, height, depth);
+                const buildingMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+                const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
+                buildingMesh.position.set(x, height / 2, z);
+                chunkGroup.add(buildingMesh);
+
+                // Collision box in world coordinates
+                const worldX = chunkX * BASE_CHUNK_SIZE + x;
+                const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
+                collisions.push({
+                    minX: worldX - width / 2,
+                    maxX: worldX + width / 2,
+                    minZ: worldZ - depth / 2,
+                    maxZ: worldZ + depth / 2,
+                    height: height
+                });
+            });
+
+            chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
+            return chunkGroup;
+        }
+
+        function updateChunks() {
+            // For testing, generate only chunk (0,0)
+            const chunkX = 0;
+            const chunkZ = 0;
+            const key = getChunkKey(chunkX * BASE_CHUNK_SIZE, chunkZ * BASE_CHUNK_SIZE);
+            if (!chunks[key]) {
+                const chunk = generateChunk(chunkX, chunkZ);
+                scene.add(chunk);
+                chunks[key] = chunk;
+            }
+            // Remove any other chunks
+            for (const existingKey in chunks) {
+                if (existingKey !== key) {
+                    scene.remove(chunks[existingKey]);
+                    delete chunks[existingKey];
+                    // Clear collisions outside this chunk
+                    collisions.length = 0;
+                    const chunk = chunks[key];
+                    if (chunk) {
+                        chunk.children.forEach(child => {
+                            if (child.geometry.type === 'BoxGeometry') {
+                                const x = chunkX * BASE_CHUNK_SIZE + child.position.x;
+                                const z = chunkZ * BASE_CHUNK_SIZE + child.position.z;
+                                const width = child.geometry.parameters.width;
+                                const depth = child.geometry.parameters.depth;
+                                const height = child.geometry.parameters.height;
+                                collisions.push({
+                                    minX: x - width / 2,
+                                    maxX: x + width / 2,
+                                    minZ: z - depth / 2,
+                                    maxZ: z + depth / 2,
+                                    height: height
+                                });
+                            }
+                        });
+                    }
                 }
             }
         }
 
         function checkCollision(x, z) {
-            if (document.getElementById('noCollisions').checked) return false; // Skip if disabled
+            if (document.getElementById('noCollisions').checked) return false;
             const cameraHeight = 5;
             for (const col of collisions) {
                 if (
@@ -212,8 +242,8 @@
         }
 
         function findSafeSpawn() {
-            let x = Math.random() * 1000 - 500; // Random start between -500 and 500
-            let z = Math.random() * 1000 - 500;
+            let x = 0; // Start within chunk (0,0)
+            let z = 0;
             const y = 5;
             const clearDistance = 10;
             let attempts = 0;
@@ -234,15 +264,18 @@
 
                 x += (noise.noise2D(x * 0.1, z * 0.1) * 20);
                 z += (noise.noise2D(x * 0.1 + 100, z * 0.1 + 100) * 20);
+                // Keep within chunk bounds for testing
+                x = Math.max(-BASE_CHUNK_SIZE / 2, Math.min(BASE_CHUNK_SIZE / 2, x));
+                z = Math.max(-BASE_CHUNK_SIZE / 2, Math.min(BASE_CHUNK_SIZE / 2, z));
                 attempts++;
             }
 
-            console.warn('No safe spawn found after', maxAttempts, 'attempts');
-            camera.position.set(Math.random() * 1000 - 500, 5, Math.random() * 1000 - 500); // Random fallback
+            console.warn('No safe spawn found, using center');
+            camera.position.set(0, 5, 0);
             return false;
         }
 
-        let baseSpeed = 1;
+        let baseSpeed = 0.2;
         let currentSpeed = baseSpeed;
         const minSpeed = 0.2;
         const turnSpeed = 0.02;
@@ -273,9 +306,9 @@
 
             const leanTarget = turnAmount * 200;
             if (turnAmount === 0) {
-                leanAngle += (0 - leanAngle) * 0.15; // Your updated value
+                leanAngle += (0 - leanAngle) * 0.15;
             } else {
-                leanAngle += (leanTarget - leanAngle) * 0.003; // Your updated value
+                leanAngle += (leanTarget - leanAngle) * 0.003;
             }
             leanAngle = Math.max(-maxLeanAngle, Math.min(maxLeanAngle, leanAngle));
             camera.rotation.z = leanAngle;
@@ -295,20 +328,19 @@
                 camera.position.z = newZ;
             }
 
-            // Top-down view
             if (document.getElementById('topDownView').checked) {
-                camera.position.y = 100; // High above
-                camera.rotation.x = -Math.PI / 2; // Look down
-                camera.rotation.z = 0; // No lean in top-down
+                camera.position.y = 80;
+                camera.rotation.x = -Math.PI / 2;
+                camera.rotation.z = 0;
                 if (motorcycle) motorcycle.rotation.z = 0;
             } else {
                 camera.position.y = 5;
-                camera.rotation.x = 0; // Reset to normal view
+                camera.rotation.x = 0;
             }
 
             const currentTime = performance.now();
             if (currentTime - lastSpeedIncrease >= 10000) {
-                baseSpeed *= 1.2;
+                baseSpeed *= 1.5;
                 lastSpeedIncrease = currentTime;
                 console.log('Base speed increased to:', baseSpeed);
             }
@@ -323,31 +355,37 @@
         // Slider controls
         document.getElementById('baseChunkSize').addEventListener('input', (e) => {
             BASE_CHUNK_SIZE = parseInt(e.target.value);
+            regenerateWorld();
         });
         document.getElementById('blockSize').addEventListener('input', (e) => {
             BLOCK_SIZE = parseInt(e.target.value);
+            regenerateWorld();
         });
         document.getElementById('roadWidth').addEventListener('input', (e) => {
             ROAD_WIDTH = parseInt(e.target.value);
+            regenerateWorld();
         });
         document.getElementById('buildingDensity').addEventListener('input', (e) => {
             BUILDING_DENSITY = parseFloat(e.target.value);
+            regenerateWorld();
         });
         document.getElementById('viewDistance').addEventListener('input', (e) => {
             VIEW_DISTANCE = parseInt(e.target.value);
+            regenerateWorld();
         });
 
         // Regenerate world
-        document.getElementById('regenerate').addEventListener('click', () => {
+        function regenerateWorld() {
             for (const key in chunks) {
                 scene.remove(chunks[key]);
                 delete chunks[key];
             }
             collisions.length = 0;
-			baseSpeed = 1;
+            baseSpeed = 0.2;
             findSafeSpawn();
-            console.log('World regenerated at new location');
-        });
+            console.log('World regenerated');
+        }
+        document.getElementById('regenerate').addEventListener('click', regenerateWorld);
 
         // Background music
         const audio = document.getElementById('backgroundMusic');
