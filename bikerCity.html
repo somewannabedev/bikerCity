@@ -146,29 +146,54 @@
                 const signMesh = new THREE.Mesh(signGeo, signMaterial);
                 signMesh.position.set(0, height / 4, depth / 2 + 0.01);
                 buildingMesh.add(signMesh);
+				return true;
             }
+			return false;
         }
 
         // Function to add neon windows to the front face of buildings
-		function addNeonWindows(buildingMesh, width, height, depth) {
-			const numWindows = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
+		function addNeonWindows(buildingMesh, width, height, depth, skipFront = false) {
+			//const numWindows = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
+			const numWindowsPerRow = 3 + Math.floor(Math.random() * 2); // 3 or 4 windows
 			const windowSize = width * 0.2; // Each window is 20% of the building width
 			const windowSpacing = width * 0.25; // Space between windows
-
+			const numRows = 2;
+			const rowSpacing = height / (numRows + 1); // Space rows evenly up the building
 			const windowMaterial = new THREE.MeshBasicMaterial({ 
-				color: 0x00ffff,  // Light blue neon
-				emissive: 0x00ffff, 
-				emissiveIntensity: 0.8 
+				color: 0x0033CCCC,  // Light blue neon
+				emissive: 0x0033CCCC 
+				//,emissiveIntensity: 0.5
 			});
 
-			const startX = -((numWindows - 1) * windowSpacing) / 2; // Center the windows
+//			const startX = -((numWindows - 1) * windowSpacing) / 2; // Center the windows
+//			for (let i = 0; i < numWindows; i++) {
+//				const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
+//				const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
+//				windowMesh.position.set(startX + i * windowSpacing, height / 4, depth / 2 + 0.01);
+//				buildingMesh.add(windowMesh);
+			function createWindowsOnSide(xOffset, zOffset, rotationY) {
+				for (let row = 0; row < numRows; row++) {
+					const yPos = rowSpacing * (row + 1) - height / 2; // Evenly space rows vertically
+					const startX = -((numWindowsPerRow - 1) * windowSpacing) / 2; // Center horizontally
 
-			for (let i = 0; i < numWindows; i++) {
-				const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
-				const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
-				windowMesh.position.set(startX + i * windowSpacing, height / 4, depth / 2 + 0.01);
-				buildingMesh.add(windowMesh);
+					for (let i = 0; i < numWindowsPerRow; i++) {
+						const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
+						const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
+						windowMesh.position.set(startX + i * windowSpacing + xOffset, yPos, zOffset);
+						windowMesh.rotation.y = rotationY; // Rotate to face the right direction
+						buildingMesh.add(windowMesh);
+					}
+				}
 			}
+
+			// Add windows to all four sides
+			if (!skipFront) createWindowsOnSide(0, depth / 2 + 0.01, 0); // Front
+			createWindowsOnSide(0, -depth / 2 - 0.01, Math.PI); // Back
+			//createWindowsOnSide(-width / 2 - 0.01, 0, Math.PI / 2); // Left
+			//createWindowsOnSide(width / 2 + 0.01, 0, -Math.PI / 2); // Right
+
+
+			
 		}
 
         function getChunkKey(x, z) {
@@ -244,7 +269,9 @@
                     shininess: 10,
                     specular: 0x222222
                 });
-                const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
+                //const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
+				const buildingMesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildingMat);
+
                 buildingMesh.position.set(x, height / 2, z);
                 chunkGroup.add(buildingMesh);
 
@@ -252,7 +279,8 @@
                 addNeonStrips(buildingMesh, width, height, depth);
                 addSignage(buildingMesh, width, height, depth);
                 //addGlowingDetails(buildingMesh, width, height, depth);
-				addNeonWindows(buildingMesh, width, height, depth);
+				const hasSign = addSignage(buildingMesh, width, height, depth);
+				addNeonWindows(buildingMesh, width, height, depth, hasSign);
 
                 const worldX = chunkX * BASE_CHUNK_SIZE + x;
                 const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
@@ -318,7 +346,7 @@
             let x = Math.random() * 1000 - 500;
             let z = Math.random() * 1000 - 500;
             const y = 5;
-            const clearDistance = 10;
+            const clearDistance = 100;
             let attempts = 0;
             const maxAttempts = 100;
 
