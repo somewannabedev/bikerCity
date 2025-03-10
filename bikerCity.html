@@ -150,6 +150,37 @@
             }
 			return false;
         }
+		
+		function createBuildingTexture() {
+			const canvas = document.createElement('canvas');
+			canvas.width = 256;
+			canvas.height = 256;
+			const ctx = canvas.getContext('2d');
+
+			// Left half: window pattern
+			ctx.fillStyle = 'black';
+			ctx.fillRect(0, 0, 128, 256);
+			ctx.fillStyle = '#0033CC'; // Light blue for neon windows
+			const windowSize = 32;
+			const spacing = 16;
+			const numWindowsX = 3;
+			const numWindowsY = 4;
+			for (let y = 0; y < numWindowsY; y++) {
+				for (let x = 0; x < numWindowsX; x++) {
+					const wx = x * (windowSize + spacing) + spacing / 2;
+					const wy = y * (windowSize + spacing) + spacing / 2;
+					if (wx + windowSize <= 128) {
+						ctx.fillRect(wx, wy, windowSize, windowSize);
+					}
+				}
+			}
+
+			// Right half: black
+			ctx.fillStyle = 'black';
+			ctx.fillRect(128, 0, 128, 256);
+
+			return new THREE.CanvasTexture(canvas);
+		}
 
         // Function to add neon windows to the front face of buildings
 		function addNeonWindows(buildingMesh, width, height, depth, skipFront = false) {
@@ -162,15 +193,8 @@
 			const windowMaterial = new THREE.MeshBasicMaterial({ 
 				color: 0x0033CCCC,  // Light blue neon
 				emissive: 0x0033CCCC 
-				//,emissiveIntensity: 0.5
 			});
 
-//			const startX = -((numWindows - 1) * windowSpacing) / 2; // Center the windows
-//			for (let i = 0; i < numWindows; i++) {
-//				const windowGeo = new THREE.PlaneGeometry(windowSize, windowSize);
-//				const windowMesh = new THREE.Mesh(windowGeo, windowMaterial);
-//				windowMesh.position.set(startX + i * windowSpacing, height / 4, depth / 2 + 0.01);
-//				buildingMesh.add(windowMesh);
 			function createWindowsOnSide(xOffset, zOffset, rotationY) {
 				for (let row = 0; row < numRows; row++) {
 					const yPos = rowSpacing * (row + 1) - height / 2; // Evenly space rows vertically
@@ -188,7 +212,7 @@
 
 			// Add windows to all four sides
 			if (!skipFront) createWindowsOnSide(0, depth / 2 + 0.01, 0); // Front
-			createWindowsOnSide(0, -depth / 2 - 0.01, Math.PI); // Back
+			//createWindowsOnSide(0, -depth / 2 - 0.01, Math.PI); // Back
 			//createWindowsOnSide(-width / 2 - 0.01, 0, Math.PI / 2); // Left
 			//createWindowsOnSide(width / 2 + 0.01, 0, -Math.PI / 2); // Right
 
@@ -253,45 +277,62 @@
                 }
                 if (!placed) break;
             }
+			
+			
+			// Create building texture once per chunk
+			const buildingTexture = createBuildingTexture();
 
-            // Create building meshes
-            buildings.forEach(building => {
-                const { gx, gy, size } = building;
-                const width = size * GRID_CELL_SIZE;
-                const depth = size * GRID_CELL_SIZE;
-                const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4);
-                const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
-                const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
+			buildings.forEach(building => {
+				const { gx, gy, size } = building;
+				const width = size * GRID_CELL_SIZE;
+				const depth = size * GRID_CELL_SIZE;
+				const height = (10 + Math.random() * 20) * (ROAD_WIDTH / 4);
+				const x = -chunkSize / 2 + (gx + size / 2) * GRID_CELL_SIZE;
+				const z = -chunkSize / 2 + (gy + size / 2) * GRID_CELL_SIZE;
 
-                const buildingGeo = new THREE.BoxGeometry(width, height, depth);
-                const buildingMat = new THREE.MeshPhongMaterial({
-                    color: 0x111111, // Dark near-black for cyberpunk look
-                    shininess: 10,
-                    specular: 0x222222
-                });
-                //const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
-				const buildingMesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), buildingMat);
+				const buildingGeo = new THREE.BoxGeometry(width, height, depth);
 
-                buildingMesh.position.set(x, height / 2, z);
-                chunkGroup.add(buildingMesh);
+				// Adjust UVs: sides to [0, 0.5], top/bottom to [0.5, 1]
+				const uvAttribute = buildingGeo.attributes.uv;
+				for (let i = 0; i < uvAttribute.count; i++) {
+					const faceIndex = Math.floor(i / 4); // 4 vertices per face
+					const u = uvAttribute.getX(i);
+					const v = uvAttribute.getY(i);
+					if (faceIndex === 2 || faceIndex === 3) { // Top and bottom
+						uvAttribute.setX(i, 0.5 + u * 0.5);
+					} else { // Sides (0, 1, 4, 5)
+						uvAttribute.setX(i, u * 0.5);
+					}
+				}
 
-                // Add cyberpunk styling
-                addNeonStrips(buildingMesh, width, height, depth);
-                addSignage(buildingMesh, width, height, depth);
-                //addGlowingDetails(buildingMesh, width, height, depth);
+				const buildingMat = new THREE.MeshPhongMaterial({
+					color: 0x111111,
+					shininess: 10,
+					specular: 0x222222,
+					emissive: 0x0066FFFF, // Match window color
+					emissiveMap: buildingTexture
+				});
+
+				const buildingMesh = new THREE.Mesh(buildingGeo, buildingMat);
+				buildingMesh.position.set(x, height / 2, z);
+				chunkGroup.add(buildingMesh);
+
+				// Add cyberpunk styling
+				addNeonStrips(buildingMesh, width, height, depth);
 				const hasSign = addSignage(buildingMesh, width, height, depth);
-				addNeonWindows(buildingMesh, width, height, depth, hasSign);
+				// Remove addNeonWindows call since windows are now in the texture
+				// addNeonWindows(buildingMesh, width, height, depth, hasSign);
 
-                const worldX = chunkX * BASE_CHUNK_SIZE + x;
-                const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
-                collisions.push({
-                    minX: worldX - width / 2,
-                    maxX: worldX + width / 2,
-                    minZ: worldZ - depth / 2,
-                    maxZ: worldZ + depth / 2,
-                    height: height
-                });
-            });
+				const worldX = chunkX * BASE_CHUNK_SIZE + x;
+				const worldZ = chunkZ * BASE_CHUNK_SIZE + z;
+				collisions.push({
+					minX: worldX - width / 2,
+					maxX: worldX + width / 2,
+					minZ: worldZ - depth / 2,
+					maxZ: worldZ + depth / 2,
+					height: height
+				});
+			});
 
             chunkGroup.position.set(chunkX * BASE_CHUNK_SIZE, 0, chunkZ * BASE_CHUNK_SIZE);
             return chunkGroup;
